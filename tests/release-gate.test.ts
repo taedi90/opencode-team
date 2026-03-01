@@ -41,12 +41,17 @@ describe("release gate", () => {
     const workspaceRoot = await createWorkspace()
     await writeFile(
       join(workspaceRoot, "README.md"),
-      "install run doctor /orchestrate /ultrawork /ralph /cancel\n",
+      "install run doctor documenter /orchestrate /ultrawork /ralph /cancel\n",
+      "utf8",
+    )
+    await writeFile(
+      join(workspaceRoot, "ARCHITECTURE.md"),
+      "documenter README docs/\n",
       "utf8",
     )
     await writeFile(
       join(workspaceRoot, "docs", "user-guide.md"),
-      "원샷 orchestrator cancel/resume MCP\n",
+      "원샷 orchestrator cancel/resume MCP documenter\n",
       "utf8",
     )
     await writeFile(
@@ -111,12 +116,17 @@ describe("release gate", () => {
     const workspaceRoot = await createWorkspace()
     await writeFile(
       join(workspaceRoot, "README.md"),
-      "install run doctor /orchestrate /ultrawork /ralph /cancel\n",
+      "install run doctor documenter /orchestrate /ultrawork /ralph /cancel\n",
+      "utf8",
+    )
+    await writeFile(
+      join(workspaceRoot, "ARCHITECTURE.md"),
+      "documenter README docs/\n",
       "utf8",
     )
     await writeFile(
       join(workspaceRoot, "docs", "user-guide.md"),
-      "원샷 orchestrator cancel/resume MCP\n",
+      "원샷 orchestrator cancel/resume MCP documenter\n",
       "utf8",
     )
     await writeFile(

@@ -332,6 +332,17 @@ describe("config loader", () => {
     expect(result.config.agent_tools.researcher.deny).toContain("bash")
   })
 
+  it("includes default documenter role policy for docs sync", async () => {
+    const { projectDir, userHome } = await createTempProject()
+
+    const result = await loadMergedConfig({ projectDir, userHome })
+
+    expect(result.config.agent_tools.documenter.allow).toContain("write")
+    expect(result.config.agent_tools.documenter.allow).toContain("edit")
+    expect(result.config.agent_tools.documenter.deny).toContain("bash")
+    expect(result.config.agent_tools.documenter.deny).toContain("github")
+  })
+
   it("includes optional context7 mcp server by default", async () => {
     const { projectDir, userHome } = await createTempProject()
 

@@ -177,6 +177,10 @@ export const DEFAULT_CONFIG: OpenCodeTeamConfig = {
       allow: ["read", "glob", "grep", "github", "question"],
       deny: ["write", "edit", "bash"],
     },
+    documenter: {
+      allow: ["read", "glob", "grep", "write", "edit", "question"],
+      deny: ["bash", "github"],
+    },
   },
 }
 

@@ -6,6 +6,7 @@
 - `npm run build`가 통과해야 한다.
 - `npm run release:gate`가 통과해야 한다.
 - 원샷 orchestrator 흐름에서 `requirements -> planning -> issue -> development -> testing -> merge`가 완료되어야 한다.
+- `documenter` 동기화 기준(`README.md`, `ARCHITECTURE.md`, `docs/`)이 최신 동작과 일치해야 한다.
 
 ## CI 차단 규칙
 - 필수 시나리오 중 하나라도 실패하면 CI를 실패 상태로 종료한다.

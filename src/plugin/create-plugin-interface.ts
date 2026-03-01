@@ -9,6 +9,7 @@ import {
 import { runDoctor } from "../doctor/index.js"
 import { createGhCliAdapter } from "../github/gh-cli-adapter.js"
 import { runWorkflow, type WorkflowRunResult } from "../pipeline/orchestrator.js"
+import { createScriptedSubagentExecutor } from "../pipeline/subagent-executor.js"
 import { ensureMcpBootstrap } from "../runtime/mcp-bootstrap.js"
 import { writeTextFileAtomic } from "../runtime/atomic-write.js"
 import {
@@ -288,6 +289,7 @@ export function createPluginInterface(input: {
 
       let result: WorkflowRunResult
       try {
+        const workflowSubagentExecutor = createScriptedSubagentExecutor()
         result = await runWorkflow(
           {
             task: runTask,
@@ -297,10 +299,29 @@ export function createPluginInterface(input: {
             sessionId: route.sessionId,
             stateFilePath: workflowStatePath,
             resume: options.resume ?? false,
+            subagentExecutor: workflowSubagentExecutor,
             ...(await (async () => {
               const adapter = await resolveGithubAdapter(managers.workspaceRoot)
               return adapter ? { githubAutomationAdapter: adapter } : {}
             })()),
+            onToolPolicyEvaluated: async ({
+              agentRole,
+              toolName,
+              allowed,
+              reasonCode,
+              policySource,
+            }) => {
+              await hooks.onToolPolicyEvaluated({
+                task: runTask,
+                mode: route.mode,
+                source: route.source,
+                agentRole,
+                toolName,
+                allowed,
+                reasonCode,
+                policySource,
+              })
+            },
             onStageTransition: async ({ stage, phase }) => {
               const updateAt = nowIso()
               await writeModeState({

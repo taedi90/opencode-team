@@ -32,6 +32,7 @@ describe("bootstrap contracts", () => {
       "developer",
       "tester",
       "reviewer",
+      "documenter",
     ])
   })
 

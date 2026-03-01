@@ -1,4 +1,5 @@
 import type { WorkflowStage } from "./stages.js"
+import { CORE_AGENT_ROLES } from "../contracts/roles.js"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
@@ -42,6 +43,87 @@ function validateHandoff(value: unknown, scope: string): string[] {
   }
   if (!isNonEmptyString(value.nextAction)) {
     errors.push(`${scope}.handoff.nextAction must be a non-empty string`)
+  }
+
+  return errors
+}
+
+function validateAgentRuns(value: unknown, scope: string, expectedStage?: WorkflowStage): string[] {
+  if (value === undefined) {
+    return []
+  }
+
+  if (!Array.isArray(value)) {
+    return [`${scope}.agentRuns must be an array when provided`]
+  }
+
+  const errors: string[] = []
+  const knownRoles = new Set(CORE_AGENT_ROLES)
+
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index]
+    const itemScope = `${scope}.agentRuns[${index}]`
+
+    if (!isRecord(item)) {
+      errors.push(`${itemScope} must be an object`)
+      continue
+    }
+
+    if (!isNonEmptyString(item.role) || !knownRoles.has(item.role as typeof CORE_AGENT_ROLES[number])) {
+      errors.push(`${itemScope}.role must be a known core agent role`)
+    }
+    if (!isNonEmptyString(item.stage)) {
+      errors.push(`${itemScope}.stage must be a non-empty string`)
+    } else if (expectedStage && item.stage !== expectedStage) {
+      errors.push(`${itemScope}.stage must match '${expectedStage}'`)
+    }
+    if (!isNonEmptyString(item.nodeId)) {
+      errors.push(`${itemScope}.nodeId must be a non-empty string`)
+    }
+    if (!isNonEmptyString(item.sessionId)) {
+      errors.push(`${itemScope}.sessionId must be a non-empty string`)
+    }
+    if (!isNonEmptyString(item.model)) {
+      errors.push(`${itemScope}.model must be a non-empty string`)
+    }
+    if (!isNonEmptyString(item.tier)) {
+      errors.push(`${itemScope}.tier must be a non-empty string`)
+    }
+    if (!isNonEmptyString(item.kind)) {
+      errors.push(`${itemScope}.kind must be a non-empty string`)
+    }
+    if (!isNonEmptyString(item.reasoningEffort)) {
+      errors.push(`${itemScope}.reasoningEffort must be a non-empty string`)
+    }
+    if (!isNonEmptyString(item.decision)) {
+      errors.push(`${itemScope}.decision must be a non-empty string`)
+    }
+    if (item.status !== "ok" && item.status !== "error") {
+      errors.push(`${itemScope}.status must be ok|error`)
+    }
+    if (!isStringArray(item.reasons)) {
+      errors.push(`${itemScope}.reasons must be a string array`)
+    }
+    if (!isStringArray(item.evidence)) {
+      errors.push(`${itemScope}.evidence must be a string array`)
+    }
+    if (!isNonEmptyString(item.instructionSource)) {
+      errors.push(`${itemScope}.instructionSource must be a non-empty string`)
+    }
+    if (item.instructionSessionFile !== undefined && !isNonEmptyString(item.instructionSessionFile)) {
+      errors.push(`${itemScope}.instructionSessionFile must be a non-empty string when provided`)
+    }
+    if (item.latencyMs !== undefined && typeof item.latencyMs !== "number") {
+      errors.push(`${itemScope}.latencyMs must be a number when provided`)
+    }
+    if (item.attempts !== undefined && !isPositiveInteger(item.attempts)) {
+      errors.push(`${itemScope}.attempts must be a positive integer when provided`)
+    }
+    if (item.toolEvents !== undefined && !isStringArray(item.toolEvents)) {
+      errors.push(`${itemScope}.toolEvents must be a string array when provided`)
+    }
+
+    errors.push(...validateHandoff(item.handoff, itemScope))
   }
 
   return errors
@@ -104,6 +186,12 @@ export function validateStageArtifactContract(
     if (artifacts.systemInstructionSource !== undefined && typeof artifacts.systemInstructionSource !== "string") {
       errors.push("requirements.systemInstructionSource must be a string when provided")
     }
+
+    if (artifacts.researchContext !== undefined && !isStringArray(artifacts.researchContext)) {
+      errors.push("requirements.researchContext must be a string array when provided")
+    }
+
+    errors.push(...validateAgentRuns(artifacts.agentRuns, "requirements", "requirements"))
   }
 
   if (stage === "planning") {
@@ -116,6 +204,7 @@ export function validateStageArtifactContract(
     }
 
     errors.push(...validateHandoff(artifacts.handoff, "planning"))
+    errors.push(...validateAgentRuns(artifacts.agentRuns, "planning", "planning"))
   }
 
   if (stage === "development") {
@@ -127,6 +216,30 @@ export function validateStageArtifactContract(
     }
     errors.push(...validateDevelopmentExecution(artifacts.developmentExecution))
     errors.push(...validateHandoff(artifacts.handoff, "development"))
+
+    if (artifacts.documentationSync !== undefined) {
+      if (!isRecord(artifacts.documentationSync)) {
+        errors.push("development.documentationSync must be an object when provided")
+      } else {
+        if (!isNonEmptyString(artifacts.documentationSync.role)) {
+          errors.push("development.documentationSync.role must be a non-empty string")
+        }
+        if (!isNonEmptyString(artifacts.documentationSync.summary)) {
+          errors.push("development.documentationSync.summary must be a non-empty string")
+        }
+        if (!isStringArray(artifacts.documentationSync.updatedDocs)) {
+          errors.push("development.documentationSync.updatedDocs must be a string array")
+        }
+        if (!isNonEmptyString(artifacts.documentationSync.reportPath)) {
+          errors.push("development.documentationSync.reportPath must be a non-empty string")
+        }
+        if (!isStringArray(artifacts.documentationSync.sourceOfTruth)) {
+          errors.push("development.documentationSync.sourceOfTruth must be a string array")
+        }
+      }
+    }
+
+    errors.push(...validateAgentRuns(artifacts.agentRuns, "development", "development"))
   }
 
   if (stage === "issue") {
@@ -143,6 +256,8 @@ export function validateStageArtifactContract(
     if (!hasIssueNumber && !hasIssueDraft) {
       errors.push("issue stage requires issueNumber or issueDraft(title/body)")
     }
+
+    errors.push(...validateAgentRuns(artifacts.agentRuns, "issue", "issue"))
   }
 
   if (stage === "testing") {
@@ -151,6 +266,7 @@ export function validateStageArtifactContract(
     }
 
     errors.push(...validateHandoff(artifacts.handoff, "testing"))
+    errors.push(...validateAgentRuns(artifacts.agentRuns, "testing", "testing"))
   }
 
   if (stage === "merge") {
@@ -159,6 +275,7 @@ export function validateStageArtifactContract(
     }
 
     errors.push(...validateHandoff(artifacts.handoff, "merge"))
+    errors.push(...validateAgentRuns(artifacts.agentRuns, "merge", "merge"))
   }
 
   return {

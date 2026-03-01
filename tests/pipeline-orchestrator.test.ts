@@ -12,6 +12,10 @@ import {
   type StageExecutor,
 } from "../src/pipeline/orchestrator.js"
 import type { GithubAutomationAdapter } from "../src/github/automation.js"
+import {
+  createScriptedSubagentExecutor,
+  type SubagentExecutor,
+} from "../src/pipeline/subagent-executor.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -248,6 +252,205 @@ describe("pipeline orchestrator", () => {
     expect(order).toEqual(["development", "testing", "merge"])
   })
 
+  it("resumes from unfinished role node within development stage", async () => {
+    const workingDirectory = await createTempDir()
+    await execFileAsync("git", ["init"], { cwd: workingDirectory })
+    await writeFile(
+      join(workingDirectory, "package.json"),
+      `${JSON.stringify({
+        name: "workflow-test",
+        version: "1.0.0",
+        scripts: {
+          "opencode:develop": "node -e \"const fs=require('fs');fs.mkdirSync('src',{recursive:true});fs.writeFileSync('src/resume-node.ts','export const resumed = true\\n');\"",
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    )
+
+    let developerCalls = 0
+    let documenterCalls = 0
+    const baseExecutor = createScriptedSubagentExecutor()
+    const executor: SubagentExecutor = async (request) => {
+      if (request.role === "developer") {
+        developerCalls += 1
+      }
+      if (request.role === "documenter") {
+        documenterCalls += 1
+        if (documenterCalls === 1) {
+          return {
+            status: "failure",
+            decision: "request_changes",
+            reasons: ["forced documenter failure"],
+            evidence: ["forced documenter failure"],
+            latencyMs: 1,
+            attempts: 1,
+            errorCode: "executor_failed",
+            errorMessage: "forced documenter failure",
+          }
+        }
+      }
+
+      return baseExecutor(request)
+    }
+
+    const first = await runWorkflow(
+      {
+        task: "resume role node #808",
+        workingDirectory,
+      },
+      {
+        subagentExecutor: executor,
+        executors: {
+          testing: async () => ({
+            status: "completed",
+            artifacts: {
+              verificationPassed: true,
+              handoff: HANDOFF,
+            },
+          }),
+          merge: async () => ({
+            status: "completed",
+            artifacts: {
+              mergeReady: false,
+              handoff: HANDOFF,
+            },
+          }),
+        },
+      },
+    )
+
+    expect(first.status).toBe("failed")
+    expect(first.failedStage).toBe("development")
+
+    const firstState = JSON.parse(await readFile(first.stateFilePath, "utf8")) as {
+      version: number
+      currentNode?: string
+      roleProgressByStage?: { development?: number }
+    }
+    expect(firstState.version).toBe(2)
+    expect(String(firstState.currentNode)).toContain("development:documenter")
+    expect(firstState.roleProgressByStage?.development).toBe(1)
+
+    const second = await runWorkflow(
+      {
+        task: "resume role node #808",
+        workingDirectory,
+      },
+      {
+        resume: true,
+        subagentExecutor: executor,
+        executors: {
+          testing: async () => ({
+            status: "completed",
+            artifacts: {
+              verificationPassed: true,
+              handoff: HANDOFF,
+            },
+          }),
+          merge: async () => ({
+            status: "completed",
+            artifacts: {
+              mergeReady: false,
+              handoff: HANDOFF,
+            },
+          }),
+        },
+      },
+    )
+
+    expect(second.status).toBe("completed")
+    expect(developerCalls).toBe(1)
+    expect(documenterCalls).toBe(2)
+  })
+
+  it("migrates v1 workflow state to v2 on resume", async () => {
+    const workingDirectory = await createTempDir()
+    const statePath = join(
+      workingDirectory,
+      ".agent-guide",
+      "runtime",
+      "state",
+      "sessions",
+      "default",
+      "workflow-state.json",
+    )
+    await mkdir(dirname(statePath), { recursive: true })
+    await writeFile(
+      statePath,
+      `${JSON.stringify({
+        version: 1,
+        status: "failed",
+        currentStage: "development",
+        completedStages: ["requirements", "planning", "issue"],
+        artifactsByStage: {
+          requirements: { requirementsTask: "legacy migration" },
+          planning: { adrDecision: "decision", adrDrivers: ["driver"], handoff: HANDOFF },
+          issue: { issueNumber: 77 },
+        },
+        artifacts: {
+          requirementsTask: "legacy migration",
+          adrDecision: "decision",
+          adrDrivers: ["driver"],
+          issueNumber: 77,
+        },
+        failedStage: "development",
+        error: "legacy failure",
+        updatedAt: "2026-03-02T00:00:00.000Z",
+      }, null, 2)}\n`,
+      "utf8",
+    )
+
+    const result = await runWorkflow(
+      {
+        task: "legacy migration",
+        workingDirectory,
+      },
+      {
+        resume: true,
+        executors: {
+          development: async () => ({
+            status: "completed",
+            artifacts: {
+              implementationPlan: "impl",
+              testingPlan: ["npm test"],
+              developmentExecution: {
+                mode: "dry_run",
+                scriptName: null,
+                changedFiles: ["src/index.ts"],
+                changeCount: 1,
+              },
+              handoff: HANDOFF,
+            },
+          }),
+          testing: async () => ({
+            status: "completed",
+            artifacts: {
+              verificationPassed: true,
+              handoff: HANDOFF,
+            },
+          }),
+          merge: async () => ({
+            status: "completed",
+            artifacts: {
+              mergeReady: false,
+              handoff: HANDOFF,
+            },
+          }),
+        },
+      },
+    )
+
+    expect(result.status).toBe("completed")
+    const migrated = JSON.parse(await readFile(result.stateFilePath, "utf8")) as {
+      version: number
+      currentNode: string | null
+      roleProgressByStage?: Record<string, number>
+    }
+    expect(migrated.version).toBe(2)
+    expect(migrated.currentNode).toBe(null)
+    expect(typeof migrated.roleProgressByStage?.development).toBe("number")
+  })
+
   it("injects AGENTS sections and persists default planning artifacts", async () => {
     const workingDirectory = await createTempDir()
     await writeFile(join(workingDirectory, "AGENTS.md"), `
@@ -278,6 +481,13 @@ describe("pipeline orchestrator", () => {
       "utf8",
     )
     expect(planContent).toContain("## ADR")
+
+    const documenterReport = await readFile(
+      join(workingDirectory, ".agent-guide", "docs", "documentation-sync.md"),
+      "utf8",
+    )
+    expect(documenterReport).toContain("doc coverage matrix")
+    expect((result.artifacts.documentationSync as { summary?: string } | undefined)?.summary).toContain("document sync prepared")
   })
 
   it("uses built-in instructions when AGENTS.md is missing", async () => {

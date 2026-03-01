@@ -8,7 +8,7 @@ import {
 } from "../src/agents/index.js"
 
 describe("agent routing", () => {
-  it("defines 8 required agent roles", () => {
+  it("defines 9 required agent roles", () => {
     expect(CORE_AGENT_ROLES).toEqual([
       "orchestrator",
       "plan",
@@ -18,6 +18,7 @@ describe("agent routing", () => {
       "developer",
       "tester",
       "reviewer",
+      "documenter",
     ])
   })
 
@@ -62,5 +63,6 @@ describe("agent routing", () => {
     expect(AGENT_DEFINITIONS.architect.kind).toBe("planning-sub")
     expect(AGENT_DEFINITIONS.critic.kind).toBe("planning-sub")
     expect(AGENT_DEFINITIONS.researcher.kind).toBe("core")
+    expect(AGENT_DEFINITIONS.documenter.kind).toBe("core")
   })
 })

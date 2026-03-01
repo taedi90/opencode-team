@@ -458,7 +458,7 @@ function validateDraft(draft: PlanningDraft): string[] {
   return errors
 }
 
-function createDefaultDraft(context: PlanningLoopContext): PlanningDraft {
+export function createDefaultPlanningDraft(context: PlanningLoopContext): PlanningDraft {
   const previousReasons = context.previousRejectReasons
   const followUpCriterion =
     previousReasons.length > 0
@@ -522,7 +522,7 @@ function createDefaultDraft(context: PlanningLoopContext): PlanningDraft {
   }
 }
 
-function createDefaultArchitectReview(context: PlanningLoopContext & { draft: PlanningDraft }): ArchitectReview {
+export function createDefaultPlanningArchitectReview(context: PlanningLoopContext & { draft: PlanningDraft }): ArchitectReview {
   return {
     antithesis: `선택안(${context.draft.selectedOptionId})은 단기 속도는 빠르지만 장기 확장성 위험이 있다.`,
     tradeoffTension: "초기 납기 속도와 중장기 유지보수 안정성은 동시에 극대화할 수 없다.",
@@ -536,7 +536,7 @@ function createDefaultArchitectReview(context: PlanningLoopContext & { draft: Pl
   }
 }
 
-function createDefaultCriticReview(context: CriticReviewContext): CriticReview {
+export function createDefaultPlanningCriticReview(context: CriticReviewContext): CriticReview {
   if (context.riskLevel === "high") {
     if (!context.draft.deliberate) {
       return {
@@ -619,10 +619,10 @@ export async function runConsensusPlanning(
   const maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS
   const contractRetries = options.contractRetries ?? DEFAULT_CONTRACT_RETRIES
   const hooks = {
-    createDraft: options.hooks?.createDraft ?? createDefaultDraft,
+    createDraft: options.hooks?.createDraft ?? createDefaultPlanningDraft,
     reviewArchitecture:
-      options.hooks?.reviewArchitecture ?? createDefaultArchitectReview,
-    reviewCritic: options.hooks?.reviewCritic ?? createDefaultCriticReview,
+      options.hooks?.reviewArchitecture ?? createDefaultPlanningArchitectReview,
+    reviewCritic: options.hooks?.reviewCritic ?? createDefaultPlanningCriticReview,
   }
 
   let previousRejectReasons: string[] = []

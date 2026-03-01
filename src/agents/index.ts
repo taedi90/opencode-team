@@ -30,6 +30,7 @@ export const AGENT_DEFINITIONS: Record<CoreAgentRole, AgentDefinition> = {
   developer: { role: "developer", tier: "STANDARD", kind: "core" },
   tester: { role: "tester", tier: "STANDARD", kind: "core" },
   reviewer: { role: "reviewer", tier: "THOROUGH", kind: "core" },
+  documenter: { role: "documenter", tier: "THOROUGH", kind: "core" },
 }
 
 function resolveModelForTier(tier: AgentTier, config: OpenCodeTeamConfig): string {

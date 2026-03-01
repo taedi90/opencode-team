@@ -30,7 +30,7 @@
   - `merge_policy.require_user_approval` boolean 정책
 - `src/agents`
   - 역할 카탈로그, 티어/모델/effort 라우팅
-  - orchestrator, plan, architect, critic, researcher, developer, tester, reviewer
+  - orchestrator, plan, architect, critic, researcher, developer, tester, reviewer, documenter
 - `src/planning`
   - 합의형 플래닝 엔진(정/반/합)
   - ADR 생성 및 deliberate 모드 검증
@@ -64,6 +64,7 @@
   - GitHub issue 생성 및 추적 키 확보
 - `development`
   - 기본 development script 실행(`opencode:develop` 우선)
+  - documenter가 `README.md`, `ARCHITECTURE.md`, `docs/**/*.md` 동기화 리포트 생성
   - `developmentExecution` artifact 생성
   - committable 변경이 없으면 실패(no-op 방지)
 - `testing`
@@ -117,6 +118,7 @@
 - 런타임에서 agent별 allow/deny 정책 강제
 - `doctor`에서 필수 서버 reachability 및 policy 유효성 점검
 - researcher role은 웹 리서치 계열 도구 허용, 쓰기/시스템 도구 기본 차단
+- documenter role은 문서 구조화/동기화를 담당하며 `write/edit` 허용, `bash/github` 기본 차단
 
 ## 11) Merge Policy
 - 단일 설정 키: `merge_policy.require_user_approval` (boolean)

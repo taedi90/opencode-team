@@ -62,6 +62,7 @@ orchestrator 세션 상태:
 - runtime에서 agent tool policy를 검사하며 위반 시 차단합니다.
 - doctor에서 MCP manifest 및 tool policy 상태를 점검합니다.
 - `researcher` 역할은 기본적으로 `web_search`/`context7` 계열 도구를 허용하고, `bash`/`write`/`edit`/`github`는 차단합니다.
+- `documenter` 역할은 `README.md`, `ARCHITECTURE.md`, `docs/**/*.md` 동기화를 담당하며 기본적으로 `write`/`edit`를 허용하고 `bash`/`github`를 차단합니다.
 
 ## Verification
 - 테스트: `npm test`
@@ -82,6 +83,7 @@ orchestrator 세션 상태:
 - 기본 엔트리: `scripts/develop/index.mjs`
 - 수동 실행 예시: `OPENCODE_TASK="implement #101" npm run opencode:develop`
 - 스크립트가 파일 변경을 만들지 못하면 no-op으로 실패합니다.
+- development 완료 후 documenter 동기화 리포트가 `.agent-guide/docs/documentation-sync.md`에 기록됩니다.
 
 세션 동시 실행 방지를 위해 session lock을 사용하며, stale lock은 TTL(기본 30분) 기준으로 자동 복구합니다.
 

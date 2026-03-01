@@ -12,6 +12,7 @@ const ROLES: CoreAgentRole[] = [
   "tester",
   "reviewer",
   "researcher",
+  "documenter",
 ]
 
 const ROLE_SPECIFIC_MARKERS: Record<CoreAgentRole, string[]> = {
@@ -23,6 +24,7 @@ const ROLE_SPECIFIC_MARKERS: Record<CoreAgentRole, string[]> = {
   tester: ["Execution Evidence", "pass/fail outcomes"],
   reviewer: ["approve` or `request_changes`", "Gate Decision"],
   researcher: ["verified` or `assumption`", "Sources"],
+  documenter: ["doc coverage matrix", "source-of-truth"],
 }
 
 describe("role prompt contract", () => {

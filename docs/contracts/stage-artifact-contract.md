@@ -5,11 +5,16 @@
 
 ## stage별 최소 산출물
 
+공통 optional:
+- `agentRuns: AgentRun[]`
+  - role/session/model/tier/decision/status/handoff/evidence를 포함한 역할 실행 로그
+
 ### requirements
 - `requirementsTask: string (non-empty)`
 - optional:
   - `systemInstructions: string`
   - `systemInstructionSource: string`
+  - `researchContext: string[]`
 
 ### planning
 - `adrDecision: string (non-empty)`
@@ -21,7 +26,13 @@
 - `issueDraft: { title: string, body: string }`
 
 ### development
-- 최소 필수 키 없음
+- 필수:
+  - `implementationPlan: string (non-empty)`
+  - `testingPlan: string[]`
+  - `developmentExecution: { mode, scriptName, changedFiles, changeCount }`
+  - `handoff: runtime handoff`
+- optional:
+  - `documentationSync: { role, summary, updatedDocs, reportPath, sourceOfTruth }`
 
 ### testing
 - `verificationPassed: boolean`

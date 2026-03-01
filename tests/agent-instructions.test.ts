@@ -98,4 +98,17 @@ describe("agent system instructions", () => {
     expect(result.content).toContain("## Role Prompt (researcher)")
     expect(result.content).toContain("authoritative documentation")
   })
+
+  it("loads documenter prompt when role is documenter", async () => {
+    const workspaceRoot = await createWorkspaceWithAgents("# AGENTS\n")
+
+    const result = await buildAgentSystemInstructions({
+      workspaceRoot,
+      role: "documenter",
+      sessionId: "document-session",
+    })
+
+    expect(result.content).toContain("## Role Prompt (documenter)")
+    expect(result.content).toContain("doc coverage matrix")
+  })
 })

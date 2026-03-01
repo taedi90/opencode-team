@@ -186,6 +186,7 @@ export async function runReleaseGate(
   const runCliJson = options.dependencies?.runCliJson ?? defaultRunCliJson
 
   const readme = await readTextFile(join(workspaceRoot, "README.md"))
+  const architecture = await readTextFile(join(workspaceRoot, "ARCHITECTURE.md"))
   const userGuide = await readTextFile(join(workspaceRoot, "docs", "user-guide.md"))
   const gateChecklist = await readTextFile(join(workspaceRoot, "docs", "release-gate-checklist.md"))
   const e2eEvidence = await readTextFile(join(workspaceRoot, "docs", "e2e-evidence.md"))
@@ -196,8 +197,9 @@ export async function runReleaseGate(
   const runtimeContractTest = await readTextFile(join(workspaceRoot, "tests", "runtime-role-output-contract.test.ts"))
 
   const checks: ReleaseGateCheck[] = [
-    checkContains("readme_runtime_commands", readme, ["install", "run", "doctor"]),
-    checkContains("user_guide_runtime_sections", userGuide, ["원샷 orchestrator", "cancel/resume", "MCP"]),
+    checkContains("readme_runtime_commands", readme, ["install", "run", "doctor", "documenter"]),
+    checkContains("architecture_documenter_contract", architecture, ["documenter", "README", "docs/"]),
+    checkContains("user_guide_runtime_sections", userGuide, ["원샷 orchestrator", "cancel/resume", "MCP", "documenter"]),
     checkContains("release_gate_checklist", gateChecklist, ["필수 시나리오", "차단 규칙", "릴리스 노트"]),
     checkContains("e2e_evidence", e2eEvidence, ["명령", "결과", "근거"]),
     checkCiCommands("ci_enforces_release_gate", ciWorkflow, ["npm run release:gate", "npm test", "npm run typecheck", "npm run build"]),

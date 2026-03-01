@@ -30,6 +30,7 @@ npm 패키지 방식:
 - 기본 스크립트 엔트리: `scripts/develop/index.mjs`
 - 수동 실행 예시: `OPENCODE_TASK="implement #29" npm run opencode:develop`
 - development 스크립트가 committable 파일 변경을 만들지 못하면 실패합니다.
+- development 단계는 documenter 동기화 리포트를 생성하며 경로는 `.agent-guide/docs/documentation-sync.md`입니다.
 
 planning 단계는 planner/architect/critic 루프를 거치며, 고위험 입력은 deliberate 출력(pre-mortem + expanded tests)을 강제합니다.
 
@@ -107,6 +108,7 @@ merge 판단 로그:
 - run 시 tool policy 위반은 실행 전에 차단합니다.
 - doctor로 MCP manifest 및 policy 유효성을 확인합니다.
 - 기본 `researcher` role은 웹 리서치용으로 `web_search`, `context7` 도구를 허용합니다.
+- 기본 `documenter` role은 `README.md`, `ARCHITECTURE.md`, `docs/**/*.md` 동기화 책임을 가지며 `bash`, `github`는 차단됩니다.
 
 ## 8) 진단
 - 텍스트: `npm run cli -- doctor`
