@@ -1,0 +1,208 @@
+{
+  "iteration": 1,
+  "draft": {
+    "principles": [
+      "단순함 우선",
+      "검증 가능성",
+      "운영 안정성"
+    ],
+    "decisionDrivers": [
+      "구현 속도",
+      "리스크 제어",
+      "재현 가능한 검증"
+    ],
+    "alternatives": [
+      {
+        "id": "minimal-copy",
+        "summary": "참조 구현을 최소 이식하고 불필요 기능을 제거한다.",
+        "pros": [
+          "빠른 납기",
+          "검증된 패턴 재사용"
+        ],
+        "cons": [
+          "초기 구조 적응 필요"
+        ]
+      },
+      {
+        "id": "greenfield",
+        "summary": "모든 컴포넌트를 신규 설계로 구현한다.",
+        "pros": [
+          "설계 자유도"
+        ],
+        "cons": [
+          "초기 제작 속도 저하",
+          "검증 비용 증가"
+        ]
+      }
+    ],
+    "selectedOptionId": "minimal-copy",
+    "acceptanceCriteria": [
+      "필수 기능 범위가 PRD와 일치한다",
+      "핵심 시나리오 테스트 통과"
+    ],
+    "verificationPlan": [
+      "단위 테스트 실행",
+      "타입체크 실행",
+      "빌드 실행"
+    ],
+    "handoff": {
+      "currentStatus": "draft_ready",
+      "changedFiles": [],
+      "openRisks": [],
+      "nextAction": "request architecture review"
+    }
+  },
+  "architect": {
+    "antithesis": "선택안(minimal-copy)은 단기 속도는 빠르지만 장기 확장성 위험이 있다.",
+    "tradeoffTension": "초기 납기 속도와 중장기 유지보수 안정성은 동시에 극대화할 수 없다.",
+    "synthesis": "핵심 경로는 최소 이식으로 진행하고 확장 포인트만 계약 기반으로 분리한다.",
+    "handoff": {
+      "currentStatus": "architecture_reviewed",
+      "changedFiles": [],
+      "openRisks": [],
+      "nextAction": "run critic gate"
+    }
+  },
+  "critic": {
+    "decision": "approve",
+    "handoff": {
+      "currentStatus": "approve",
+      "changedFiles": [],
+      "openRisks": [],
+      "nextAction": "emit ADR and proceed to issue stage"
+    }
+  },
+  "roleOutputs": {
+    "plan": {
+      "role": "plan",
+      "status": "ok",
+      "decision": "draft_ready",
+      "reasons": [],
+      "evidence": [
+        "alternatives=2",
+        "drivers=3"
+      ],
+      "payload": {
+        "principles": [
+          "단순함 우선",
+          "검증 가능성",
+          "운영 안정성"
+        ],
+        "decisionDrivers": [
+          "구현 속도",
+          "리스크 제어",
+          "재현 가능한 검증"
+        ],
+        "alternatives": [
+          {
+            "id": "minimal-copy",
+            "summary": "참조 구현을 최소 이식하고 불필요 기능을 제거한다.",
+            "pros": [
+              "빠른 납기",
+              "검증된 패턴 재사용"
+            ],
+            "cons": [
+              "초기 구조 적응 필요"
+            ]
+          },
+          {
+            "id": "greenfield",
+            "summary": "모든 컴포넌트를 신규 설계로 구현한다.",
+            "pros": [
+              "설계 자유도"
+            ],
+            "cons": [
+              "초기 제작 속도 저하",
+              "검증 비용 증가"
+            ]
+          }
+        ],
+        "selectedOptionId": "minimal-copy",
+        "acceptanceCriteria": [
+          "필수 기능 범위가 PRD와 일치한다",
+          "핵심 시나리오 테스트 통과"
+        ],
+        "verificationPlan": [
+          "단위 테스트 실행",
+          "타입체크 실행",
+          "빌드 실행"
+        ],
+        "handoff": {
+          "currentStatus": "draft_ready",
+          "changedFiles": [],
+          "openRisks": [],
+          "nextAction": "request architecture review"
+        }
+      },
+      "handoff": {
+        "currentStatus": "draft_ready",
+        "changedFiles": [],
+        "openRisks": [],
+        "nextAction": "request architecture review"
+      },
+      "retry": {
+        "attempts": 1,
+        "maxAttempts": 3
+      }
+    },
+    "architect": {
+      "role": "architect",
+      "status": "ok",
+      "decision": "review_ready",
+      "reasons": [],
+      "evidence": [
+        "초기 납기 속도와 중장기 유지보수 안정성은 동시에 극대화할 수 없다."
+      ],
+      "payload": {
+        "antithesis": "선택안(minimal-copy)은 단기 속도는 빠르지만 장기 확장성 위험이 있다.",
+        "tradeoffTension": "초기 납기 속도와 중장기 유지보수 안정성은 동시에 극대화할 수 없다.",
+        "synthesis": "핵심 경로는 최소 이식으로 진행하고 확장 포인트만 계약 기반으로 분리한다.",
+        "handoff": {
+          "currentStatus": "architecture_reviewed",
+          "changedFiles": [],
+          "openRisks": [],
+          "nextAction": "run critic gate"
+        }
+      },
+      "handoff": {
+        "currentStatus": "architecture_reviewed",
+        "changedFiles": [],
+        "openRisks": [],
+        "nextAction": "run critic gate"
+      },
+      "retry": {
+        "attempts": 1,
+        "maxAttempts": 3
+      }
+    },
+    "critic": {
+      "role": "critic",
+      "status": "ok",
+      "decision": "approve",
+      "reasons": [],
+      "evidence": [
+        "critic approved"
+      ],
+      "payload": {
+        "decision": "approve",
+        "handoff": {
+          "currentStatus": "approve",
+          "changedFiles": [],
+          "openRisks": [],
+          "nextAction": "emit ADR and proceed to issue stage"
+        }
+      },
+      "handoff": {
+        "currentStatus": "approve",
+        "changedFiles": [],
+        "openRisks": [],
+        "nextAction": "emit ADR and proceed to issue stage"
+      },
+      "retry": {
+        "attempts": 1,
+        "maxAttempts": 3
+      }
+    }
+  },
+  "validationErrors": []
+}

@@ -1,0 +1,41 @@
+{
+  "name": "opencode-team",
+  "version": "0.1.0",
+  "author": "Taesoo Kim (https://github.com/taedi90)",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "bin": {
+    "opencode-team": "bin/opencode-team.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "opencode:develop": "node scripts/develop/index.mjs",
+    "release:gate": "node scripts/release-gate.mjs",
+    "e2e:reliability": "node scripts/e2e-reliability.mjs",
+    "cli": "node dist/src/cli/index.js",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.4.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
