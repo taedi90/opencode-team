@@ -23,6 +23,11 @@ import type {
   SubagentExecutionErrorCode,
   SubagentExecutor,
 } from "./subagent-executor.js"
+import {
+  buildDelegationPrompt,
+  summarizeDelegationPrompt,
+  type DelegationPromptInput,
+} from "./delegation-prompt-contract.js"
 import type { WorkflowStage } from "./stages.js"
 
 export class WorkflowAgentExecutionError extends Error {
@@ -58,6 +63,9 @@ export interface WorkflowAgentRunInput<TContext> {
   sessionId: string
   context: TContext
   executor: SubagentExecutor
+  timeoutMs?: number
+  maxRetries?: number
+  delegationPrompt?: DelegationPromptInput
   config?: OpenCodeTeamConfig | undefined
   onToolPolicyEvaluated?: (input: {
     stage: WorkflowStage
@@ -82,6 +90,8 @@ export interface WorkflowAgentRun<TPayload> {
   latencyMs: number
   attempts: number
   toolEvents: string[]
+  delegationPromptHash?: string
+  delegationPromptLineCount?: number
 }
 
 export interface WorkflowAgentRunArtifact {
@@ -103,6 +113,8 @@ export interface WorkflowAgentRunArtifact {
   latencyMs: number
   attempts: number
   toolEvents: string[]
+  delegationPromptHash?: string
+  delegationPromptLineCount?: number
 }
 
 export function toWorkflowAgentRunArtifact<TPayload>(run: WorkflowAgentRun<TPayload>): WorkflowAgentRunArtifact {
@@ -127,6 +139,10 @@ export function toWorkflowAgentRunArtifact<TPayload>(run: WorkflowAgentRun<TPayl
     latencyMs: run.latencyMs,
     attempts: run.attempts,
     toolEvents: [...run.toolEvents],
+    ...(run.delegationPromptHash ? { delegationPromptHash: run.delegationPromptHash } : {}),
+    ...(typeof run.delegationPromptLineCount === "number"
+      ? { delegationPromptLineCount: run.delegationPromptLineCount }
+      : {}),
   }
 }
 
@@ -206,6 +222,13 @@ export async function runWorkflowAgent<TContext, TPayload>(
     sessionId: input.sessionId,
   })
 
+  const delegationPrompt = input.delegationPrompt
+    ? buildDelegationPrompt(input.delegationPrompt)
+    : null
+  const delegationPromptSummary = delegationPrompt
+    ? summarizeDelegationPrompt(delegationPrompt)
+    : null
+
   const execution = await input.executor<TContext, TPayload>({
     role: input.role,
     stage: input.stage,
@@ -214,8 +237,12 @@ export async function runWorkflowAgent<TContext, TPayload>(
     workspaceRoot: input.workspaceRoot,
     model: route.model,
     reasoningEffort: route.reasoningEffort,
-    instructions: instructions.content,
+    instructions: delegationPrompt
+      ? `${instructions.content}\n\n## Delegation Prompt Contract\n${delegationPrompt}`
+      : instructions.content,
     context: input.context,
+    ...(typeof input.timeoutMs === "number" ? { timeoutMs: input.timeoutMs } : {}),
+    ...(typeof input.maxRetries === "number" ? { maxRetries: input.maxRetries } : {}),
   })
 
   assertSuccessfulExecution({
@@ -291,10 +318,18 @@ export async function runWorkflowAgent<TContext, TPayload>(
         ...(execution.evidence ?? []),
         `model=${route.model}`,
         `tier=${route.tier}`,
+        ...(delegationPromptSummary
+          ? [
+            `delegation_prompt_hash=${delegationPromptSummary.hash}`,
+            `delegation_prompt_line_count=${String(delegationPromptSummary.lineCount)}`,
+          ]
+          : []),
       ],
     }),
     latencyMs: execution.latencyMs,
     attempts: execution.attempts,
     toolEvents,
+    ...(delegationPromptSummary ? { delegationPromptHash: delegationPromptSummary.hash } : {}),
+    ...(delegationPromptSummary ? { delegationPromptLineCount: delegationPromptSummary.lineCount } : {}),
   }
 }

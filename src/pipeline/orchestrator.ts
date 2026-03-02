@@ -34,6 +34,7 @@ import {
   type WorkflowAgentRun,
   type WorkflowAgentRunArtifact,
 } from "./agent-runtime.js"
+import type { DelegationPromptInput } from "./delegation-prompt-contract.js"
 import {
   createScriptedSubagentExecutor,
   type SubagentExecutor,
@@ -266,7 +267,7 @@ export function resolveCommittablePathsFromStatus(
     }
   }
 
-  return [...collected]
+  return [...collected].sort((left, right) => left.localeCompare(right))
 }
 
 function normalizePreferredPaths(workingDirectory: string, paths: readonly string[]): string[] {
@@ -306,6 +307,10 @@ function resolvePreferredCommitPaths(workingDirectory: string, artifacts: Record
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
+}
+
+function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error
 }
 
 async function readPackageScripts(workingDirectory: string): Promise<Record<string, string>> {
@@ -356,8 +361,12 @@ async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
+      return false
+    }
+
+    throw error
   }
 }
 
@@ -378,7 +387,7 @@ async function listMarkdownFilesRecursive(rootDirectory: string, baseDirectory: 
     }
   }
 
-  return files
+  return files.sort((left, right) => left.localeCompare(right))
 }
 
 async function runDocumenterSync(input: {
@@ -466,7 +475,7 @@ async function collectResearchContextPaths(workingDirectory: string): Promise<st
     sources.push(...docsMarkdownFiles)
   }
 
-  return [...new Set(sources)]
+  return [...new Set(sources)].sort((left, right) => left.localeCompare(right))
 }
 
 async function isGitRepository(workingDirectory: string): Promise<boolean> {
@@ -674,6 +683,8 @@ function createDefaultExecutors(
   input: WorkflowInput,
   options: WorkflowRunOptions,
 ): Record<WorkflowStage, StageExecutor> {
+  const DEFAULT_SUBAGENT_TIMEOUT_MS = 120_000
+  const DEFAULT_SUBAGENT_MAX_RETRIES = 0
   const subagentExecutor = options.subagentExecutor ?? createScriptedSubagentExecutor()
   let runtimeConfigPromise: Promise<OpenCodeTeamConfig | undefined> | undefined
 
@@ -707,6 +718,31 @@ function createDefaultExecutors(
   }): Promise<WorkflowAgentRun<TPayload>> {
     const runtimeConfig = await resolveRuntimeConfig()
     const nodeId = resolveNodeId(inputRole.stage, inputRole.role, inputRole.index, inputRole.contextSuffix)
+    const sessionId = createRoleSessionId(inputRole.stage, inputRole.role, inputRole.contextSuffix)
+    const requestedTools = inputRole.requestedTools ?? []
+    const delegationPrompt: DelegationPromptInput = {
+      task: `Execute role ${inputRole.role} for ${inputRole.stage} stage and produce contract-valid output for node ${nodeId}.`,
+      expectedOutcome: "Return a valid decision, payload, and handoff aligned with stage artifact contract and workflow progression.",
+      requiredTools: requestedTools,
+      mustDo: [
+        "Follow role-specific system instructions and preserve deterministic workflow behavior.",
+        "Provide evidence and reasons whenever the role requests changes or fails.",
+        "Keep stage artifacts schema-valid for downstream stages.",
+      ],
+      mustNotDo: [
+        "Do not skip contract-required handoff fields.",
+        "Do not use tools outside policy or outside requested scope.",
+        "Do not mutate unrelated workflow state.",
+      ],
+      context: [
+        `workflow_task=${input.task}`,
+        `working_directory=${input.workingDirectory}`,
+        `stage=${inputRole.stage}`,
+        `role=${inputRole.role}`,
+        `node_id=${nodeId}`,
+        `session_id=${sessionId}`,
+      ],
+    }
 
     return runWorkflowAgent<{
       requestedTools: string[]
@@ -727,12 +763,15 @@ function createDefaultExecutors(
       stage: inputRole.stage,
       nodeId,
       workspaceRoot: input.workingDirectory,
-      sessionId: createRoleSessionId(inputRole.stage, inputRole.role, inputRole.contextSuffix),
+      sessionId,
       context: {
-        requestedTools: inputRole.requestedTools ?? [],
+        requestedTools,
         execute: inputRole.execute,
       },
       executor: subagentExecutor,
+      timeoutMs: DEFAULT_SUBAGENT_TIMEOUT_MS,
+      maxRetries: DEFAULT_SUBAGENT_MAX_RETRIES,
+      delegationPrompt,
       ...(runtimeConfig ? { config: runtimeConfig } : {}),
       ...(options.onToolPolicyEvaluated
         ? { onToolPolicyEvaluated: options.onToolPolicyEvaluated }

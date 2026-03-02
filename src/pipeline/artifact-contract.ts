@@ -122,6 +122,12 @@ function validateAgentRuns(value: unknown, scope: string, expectedStage?: Workfl
     if (item.toolEvents !== undefined && !isStringArray(item.toolEvents)) {
       errors.push(`${itemScope}.toolEvents must be a string array when provided`)
     }
+    if (item.delegationPromptHash !== undefined && !isNonEmptyString(item.delegationPromptHash)) {
+      errors.push(`${itemScope}.delegationPromptHash must be a non-empty string when provided`)
+    }
+    if (item.delegationPromptLineCount !== undefined && !isPositiveInteger(item.delegationPromptLineCount)) {
+      errors.push(`${itemScope}.delegationPromptLineCount must be a positive integer when provided`)
+    }
 
     errors.push(...validateHandoff(item.handoff, itemScope))
   }

@@ -9,7 +9,10 @@ import {
   runWorkflowAgent,
   toWorkflowAgentRunArtifact,
 } from "../src/pipeline/agent-runtime.js"
-import { createScriptedSubagentExecutor } from "../src/pipeline/subagent-executor.js"
+import {
+  createScriptedSubagentExecutor,
+  type SubagentExecutor,
+} from "../src/pipeline/subagent-executor.js"
 
 let tempRoot = ""
 
@@ -104,6 +107,14 @@ describe("workflow agent runtime", () => {
       workspaceRoot,
       sessionId: "req-researcher",
       executor: createScriptedSubagentExecutor(),
+      delegationPrompt: {
+        task: "collect research context",
+        expectedOutcome: "return context list",
+        requiredTools: ["read", "glob", "grep"],
+        mustDo: ["preserve contract"],
+        mustNotDo: ["skip handoff"],
+        context: ["stage=requirements", "role=researcher"],
+      },
       context: {
         requestedTools: ["read", "glob", "grep"],
         execute: async () => ({
@@ -125,5 +136,53 @@ describe("workflow agent runtime", () => {
     expect(artifact.stage).toBe("requirements")
     expect(artifact.nodeId).toBe("requirements:researcher:02")
     expect(artifact.toolEvents).toEqual(["read", "glob", "grep"])
+    expect(typeof artifact.delegationPromptHash).toBe("string")
+    expect((artifact.delegationPromptLineCount ?? 0)).toBeGreaterThan(0)
+  })
+
+  it("passes timeout and retry hints to subagent executor", async () => {
+    const workspaceRoot = await createWorkspace()
+    const captures: Array<{ timeoutMs?: number, maxRetries?: number }> = []
+    const baseExecutor = createScriptedSubagentExecutor()
+
+    const executor: SubagentExecutor = async (request) => {
+      const capture: { timeoutMs?: number, maxRetries?: number } = {}
+      if (typeof request.timeoutMs === "number") {
+        capture.timeoutMs = request.timeoutMs
+      }
+      if (typeof request.maxRetries === "number") {
+        capture.maxRetries = request.maxRetries
+      }
+      captures.push(capture)
+
+      return await baseExecutor(request)
+    }
+
+    await runWorkflowAgent({
+      role: "researcher",
+      stage: "requirements",
+      nodeId: "requirements:researcher:timeout-hint",
+      workspaceRoot,
+      sessionId: "req-researcher-timeout-hint",
+      executor,
+      timeoutMs: 3210,
+      maxRetries: 2,
+      context: {
+        execute: async () => ({
+          decision: "context_collected",
+          payload: {
+            researchContext: ["README.md"],
+          },
+          handoff: {
+            currentStatus: "research_ready",
+            changedFiles: [],
+            openRisks: [],
+            nextAction: "handoff",
+          },
+        }),
+      },
+    })
+
+    expect(captures).toEqual([{ timeoutMs: 3210, maxRetries: 2 }])
   })
 })
