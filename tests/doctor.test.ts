@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ensureUserConfigFile } from "../src/config/index.js"
 import { runDoctor } from "../src/doctor/index.js"
@@ -20,6 +20,7 @@ async function createTempWorkspace(): Promise<{ workspaceRoot: string; userHome:
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   if (tempRoot) {
     await rm(tempRoot, { recursive: true, force: true })
     tempRoot = ""
@@ -173,5 +174,66 @@ describe("doctor", () => {
 
     const reachableCheck = result.checks.find((item) => item.name === "mcp_required_servers_reachable")
     expect(reachableCheck?.status).toBe("pass")
+  })
+
+  it("uses POST ping fallback when remote MCP GET probe is unsupported", async () => {
+    const { workspaceRoot, userHome } = await createTempWorkspace()
+
+    const userConfig = await ensureUserConfigFile({ userHome })
+    const manifestPath = join(workspaceRoot, ".agent-guide", "runtime", "mcp", "manifest.json")
+    await mkdir(join(workspaceRoot, ".agent-guide", "runtime", "mcp"), { recursive: true })
+    await writeFile(manifestPath, "{}\n", "utf8")
+
+    await writeFile(
+      userConfig.path,
+      `${JSON.stringify({
+        mcp: {
+          servers: {
+            filesystem: {
+              enabled: false,
+              required: false,
+            },
+            github: {
+              enabled: false,
+              required: false,
+            },
+            web_search: {
+              enabled: true,
+              required: true,
+              type: "remote",
+              command: "https://example.test/mcp",
+              args: [],
+            },
+          },
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    )
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      const method = init?.method ?? "GET"
+      if (method === "GET") {
+        return new Response("", { status: 405 })
+      }
+      return new Response("{}", { status: 200 })
+    })
+
+    const result = await runDoctor({
+      workspaceRoot,
+      userHome,
+      dependencies: {
+        checkGhAuth: async () => ({
+          status: "pass",
+          detail: "ok",
+        }),
+        mcpManifestPath: manifestPath,
+      },
+    })
+
+    const reachableCheck = result.checks.find((item) => item.name === "mcp_required_servers_reachable")
+    expect(reachableCheck?.status).toBe("pass")
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("GET")
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("POST")
   })
 })

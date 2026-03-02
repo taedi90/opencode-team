@@ -124,9 +124,47 @@ async function probeMcpServerInitialize(input: {
 }
 
 async function probeRemoteMcp(url: string): Promise<boolean> {
+  const timeoutMs = 5000
+
+  const fetchWithTimeout = async (init: RequestInit): Promise<Response> => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      controller.abort()
+    }, timeoutMs)
+
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   try {
-    const response = await fetch(url, { method: "GET" })
-    return response.status < 500
+    const response = await fetchWithTimeout({ method: "GET" })
+    if (response.status >= 200 && response.status < 300) {
+      return true
+    }
+  } catch {
+    // no-op
+  }
+
+  try {
+    const response = await fetchWithTimeout({
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "ping",
+      }),
+    })
+
+    return response.status >= 200 && response.status < 300
   } catch {
     return false
   }
