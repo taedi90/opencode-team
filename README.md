@@ -28,6 +28,7 @@ OpenAI-only 기반 멀티 에이전트 실무 워크플로우 플러그인입니
 - `/orchestrate <task>`: orchestrator one-shot 실행
 - `/ultrawork <task>`: standalone ultrawork 실행
 - `/ralph <task>`: standalone ralph loop 실행
+- `/ulw-loop <task>`: ultrawork -> ralph loop 연속 실행
 - `/cancel --target <orchestrator|ultrawork|ralph>`: session mode 취소
 
 추가 args:
