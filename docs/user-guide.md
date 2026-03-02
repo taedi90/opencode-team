@@ -15,6 +15,37 @@ npm 패키지 방식:
 - 전역 설치: `npm install -g opencode-team`
 - 단발 실행: `npx opencode-team install`
 
+소스 다운로드 기반 적용(글로벌 설치 없이):
+1. 소스/빌드
+   - `git clone https://github.com/taedi90/opencode-team.git`
+   - `cd opencode-team`
+   - `npm ci && npm run build`
+2. 설정 bootstrap
+   - `npm run cli -- install --json`
+3. 현재 소스를 OpenCode plugin으로 등록
+   - `PKG_TGZ=$(npm pack --silent | tail -n1)`
+   - `PKG_SPEC="file:$(pwd)/${PKG_TGZ}"`
+   - `PKG_SPEC="$PKG_SPEC" node - <<'NODE'`
+   - `const fs = require('fs')`
+   - `const path = require('path')`
+   - `const configPath = path.join(process.env.HOME, '.config', 'opencode', 'opencode.json')`
+   - `fs.mkdirSync(path.dirname(configPath), { recursive: true })`
+   - `let config = { $schema: 'https://opencode.ai/config.json', plugin: [] }`
+   - `if (fs.existsSync(configPath)) config = JSON.parse(fs.readFileSync(configPath, 'utf8'))`
+   - `if (!Array.isArray(config.plugin)) config.plugin = []`
+   - `config.plugin = config.plugin.filter((item) => item !== 'opencode-team' && item !== 'opencode-team@latest' && !(typeof item === 'string' && item.startsWith('file:') && item.includes('opencode-team-')))`
+   - `config.plugin.push(process.env.PKG_SPEC)`
+   - `fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8')`
+   - `console.log(configPath)`
+   - `NODE`
+4. 적용 확인
+   - `npm run cli -- doctor --json`
+
+소스 업데이트 후 재적용:
+- `npm run build`
+- `npm pack --silent`
+- 위 3번 등록 스크립트를 다시 실행
+
 설치 결과:
 - 사용자 설정: `~/.config/opencode/opencode-team.json`
 - OpenCode 플러그인 등록: `~/.config/opencode/opencode.json` (`plugin` 배열에 `opencode-team@latest` 추가)
