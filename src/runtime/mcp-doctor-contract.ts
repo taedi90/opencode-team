@@ -39,7 +39,12 @@ function statusForRequiredConfigured(config: OpenCodeTeamConfig): McpDoctorCheck
     .filter(([, server]) => server.required)
 
   const invalid = required
-    .filter(([, server]) => server.command.trim().length === 0)
+    .filter(([, server]) => {
+      if (server.type === "remote") {
+        return !(server.command.startsWith("https://") || server.command.startsWith("http://"))
+      }
+      return server.command.trim().length === 0
+    })
     .map(([name]) => name)
 
   if (invalid.length > 0) {
@@ -99,7 +104,7 @@ function statusForRequiredReachable(
     return {
       name: "mcp_required_servers_reachable",
       status: "fail",
-      detail: `required mcp servers unreachable: ${missing.join(", ")}`,
+      detail: `required mcp servers unreachable: ${missing.join(", ")} (check server command availability and credentials such as GH_TOKEN/GITHUB_TOKEN when applicable)`,
     }
   }
 

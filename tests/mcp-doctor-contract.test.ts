@@ -28,6 +28,7 @@ describe("mcp doctor contract", () => {
           github: {
             enabled: false,
             required: defaultGithub.required,
+            type: defaultGithub.type,
             command: defaultGithub.command,
             args: [...defaultGithub.args],
           },
@@ -43,6 +44,19 @@ describe("mcp doctor contract", () => {
     const enabledCheck = checks.find((item) => item.name === "mcp_required_servers_enabled")
     expect(enabledCheck?.status).toBe("fail")
     expect(enabledCheck?.detail).toContain("github")
+  })
+
+  it("includes troubleshooting hint when required server is unreachable", () => {
+    const checks = evaluateMcpDoctorChecks({
+      config: DEFAULT_CONFIG,
+      manifestExists: true,
+      reachableServers: [],
+    })
+
+    const reachableCheck = checks.find((item) => item.name === "mcp_required_servers_reachable")
+    expect(reachableCheck?.status).toBe("fail")
+    expect(reachableCheck?.detail).toContain("filesystem")
+    expect(reachableCheck?.detail).toContain("GH_TOKEN")
   })
 
   it("fails when agent allowlist is empty", () => {

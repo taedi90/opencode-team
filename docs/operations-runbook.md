@@ -79,6 +79,16 @@
   2. 오류 텍스트를 기준으로 새로운 분류 후보 기록
   3. 필요 시 runbook 분류 확장
 
+### 7) `mcp_required_servers_reachable`
+- 증상:
+  - `doctor --json`에서 `mcp_required_servers_reachable=fail`
+  - detail에 `required mcp servers unreachable: ...` 포함
+- 대응:
+  1. `~/.config/opencode/opencode-team.json` 또는 `.opencode/opencode-team.json`의 required MCP 서버 command 확인
+  2. command가 PATH에서 실행 가능한지 확인 (`filesystem`, `github`)
+  3. github 서버는 `GH_TOKEN` 또는 `GITHUB_TOKEN` 설정 후 재검증
+  4. 제한 환경이면 프로젝트 설정에서 해당 서버의 `required` 정책을 조정 후 doctor 재실행
+
 ## 운영 중지 기준
 - 동일 유형 치명 실패가 3회 연속 발생
 - `doctor` 결과가 `fail`

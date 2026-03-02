@@ -41,6 +41,12 @@ npm 패키지 방식:
 4. 적용 확인
    - `npm run cli -- doctor --json`
 
+doctor 결과 해석(중요):
+- `mcp_required_servers_reachable=fail`은 install 실패가 아니라, 필수 MCP 서버 프로세스를 현재 환경에서 실행할 수 없다는 의미입니다.
+- 기본 필수 서버는 `filesystem`, `github`이며, 각 `command`가 PATH에서 실행 가능해야 합니다.
+- `github` 서버는 환경에 따라 `GH_TOKEN` 또는 `GITHUB_TOKEN`이 필요할 수 있습니다.
+- 오프라인/제한 환경에서는 프로젝트 설정(`.opencode/opencode-team.json`)에서 `required` 정책을 조정한 뒤 doctor를 재실행하세요.
+
 소스 업데이트 후 재적용:
 - `npm run build`
 - `npm pack --silent`
@@ -51,6 +57,7 @@ npm 패키지 방식:
 - OpenCode 플러그인 등록: `~/.config/opencode/opencode.json` (`plugin` 배열에 `opencode-team@latest` 추가)
 - 프로젝트 MCP manifest: `.agent-guide/runtime/mcp/manifest.json`
 - 프로젝트 오버라이드 설정 위치: `.opencode/opencode-team.json` (사용자 설정보다 우선)
+- install 시 MCP stdio 서버(`filesystem`, `github`)는 자동 설치(프로젝트 로컬)와 실행 설정 보정이 함께 수행됩니다.
 
 ## 2) 원샷 orchestrator
 - 실행: `npm run cli -- run "/orchestrate implement #29 production plugin"`
@@ -148,6 +155,8 @@ merge 판단 로그:
 
 ## 7) MCP / Tool Policy
 - install 시 MCP bootstrap/manifest를 생성합니다.
+- `web_search`는 `oh-my-opencode` 패턴을 따라 remote MCP URL(Exa/Tavily) 기반으로 동작합니다.
+- `github`는 docker가 아닌 외부 MCP 호출(`npx @modelcontextprotocol/server-github`) 방식으로 설정됩니다.
 - run 시 tool policy 위반은 실행 전에 차단합니다.
 - doctor로 MCP manifest 및 policy 유효성을 확인합니다.
 - tool policy audit 로그(`.agent-guide/runtime/tool-policy-audit.jsonl`)는 `session_id`, `stage` 필드를 포함합니다.
@@ -179,6 +188,7 @@ E2E 반복 검증 결과는 `.agent-guide/runtime/reports/e2e-reliability-<times
 - doctor fail일 때
   - MCP manifest 경로/내용 확인
   - agent tool policy의 allow/deny 형식 확인
+  - `mcp_required_servers_reachable`가 fail이면 MCP server command 실행 가능 여부(PATH)와 credential(`GH_TOKEN`/`GITHUB_TOKEN`)을 확인
 
 추가 운영 문서:
 - `docs/operations-runbook.md`

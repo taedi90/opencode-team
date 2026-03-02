@@ -18,6 +18,7 @@
 - `name: string`
 - `enabled: boolean`
 - `required: boolean`
+- `type: "stdio" | "remote"`
 - `command: string`
 - `args: string[]`
 - `source: "merged_config"`

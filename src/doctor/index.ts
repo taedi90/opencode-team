@@ -123,6 +123,15 @@ async function probeMcpServerInitialize(input: {
   })
 }
 
+async function probeRemoteMcp(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(url, { method: "GET" })
+    return response.status < 500
+  } catch {
+    return false
+  }
+}
+
 async function defaultMcpReachabilityCheck(config: OpenCodeTeamConfig): Promise<string[]> {
   const reachable: string[] = []
 
@@ -130,6 +139,19 @@ async function defaultMcpReachabilityCheck(config: OpenCodeTeamConfig): Promise<
     .filter(([, server]) => server.required && server.enabled)
 
   for (const [name, server] of requiredServers) {
+    if (server.type === "remote") {
+      const url = server.command.trim()
+      if (!url) {
+        continue
+      }
+
+      const healthy = await probeRemoteMcp(url)
+      if (healthy) {
+        reachable.push(name)
+      }
+      continue
+    }
+
     const command = server.command.trim()
     if (!command) {
       continue

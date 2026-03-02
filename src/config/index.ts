@@ -26,6 +26,7 @@ export interface ModelsConfig {
 export interface McpServerConfig {
   enabled: boolean
   required: boolean
+  type: "stdio" | "remote"
   command: string
   args: string[]
 }
@@ -120,25 +121,33 @@ export const DEFAULT_CONFIG: OpenCodeTeamConfig = {
       filesystem: {
         enabled: true,
         required: true,
+        type: "stdio",
         command: "mcp-server-filesystem",
         args: [],
       },
       github: {
         enabled: true,
         required: true,
-        command: "mcp-server-github",
-        args: [],
+        type: "stdio",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-github"],
       },
       web_search: {
         enabled: true,
         required: false,
-        command: "mcp-server-web-search",
+        type: "remote",
+        command: process.env.TAVILY_API_KEY
+          ? "https://mcp.tavily.com/mcp/"
+          : (process.env.EXA_API_KEY
+              ? `https://mcp.exa.ai/mcp?tools=web_search_exa&exaApiKey=${encodeURIComponent(process.env.EXA_API_KEY)}`
+              : "https://mcp.exa.ai/mcp?tools=web_search_exa"),
         args: [],
       },
       context7: {
         enabled: true,
         required: false,
-        command: "mcp-server-context7",
+        type: "remote",
+        command: "https://mcp.context7.com/mcp",
         args: [],
       },
     },
@@ -204,6 +213,7 @@ function cloneDefaults(): OpenCodeTeamConfig {
     mcpServers[name] = {
       enabled: server.enabled,
       required: server.required,
+      type: server.type,
       command: server.command,
       args: [...server.args],
     }
@@ -239,6 +249,7 @@ function mergeConfig(base: OpenCodeTeamConfig, patch: OpenCodeTeamConfigPatch): 
     mergedMcpServers[name] = {
       enabled: server.enabled,
       required: server.required,
+      type: server.type,
       command: server.command,
       args: [...server.args],
     }
@@ -249,6 +260,7 @@ function mergeConfig(base: OpenCodeTeamConfig, patch: OpenCodeTeamConfigPatch): 
       const current = mergedMcpServers[name] ?? {
         enabled: true,
         required: false,
+        type: "stdio",
         command: name,
         args: [],
       }
@@ -397,6 +409,14 @@ function parseMcpServers(
         serverPatch.command = rawServer.command.trim()
       } else {
         warnings.push(`mcp.servers.${name}.command must be a non-empty string`)
+      }
+    }
+
+    if (rawServer.type !== undefined) {
+      if (rawServer.type === "stdio" || rawServer.type === "remote") {
+        serverPatch.type = rawServer.type
+      } else {
+        warnings.push(`mcp.servers.${name}.type must be either stdio or remote`)
       }
     }
 

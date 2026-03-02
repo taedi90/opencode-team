@@ -7,6 +7,7 @@ export interface McpManifestServer {
   name: string
   enabled: boolean
   required: boolean
+  type: "stdio" | "remote"
   command: string
   args: string[]
   source: "merged_config"
@@ -94,6 +95,7 @@ function mapManifestServers(config: OpenCodeTeamConfig): Record<string, McpManif
       name,
       enabled: server.enabled,
       required: server.required,
+      type: server.type,
       command: server.command,
       args: [...server.args],
       source: "merged_config",

@@ -12,6 +12,7 @@ import { createGhCliAdapter } from "../github/gh-cli-adapter.js"
 import { runWorkflow, type WorkflowRunResult } from "../pipeline/orchestrator.js"
 import { createScriptedSubagentExecutor } from "../pipeline/subagent-executor.js"
 import { ensureMcpBootstrap } from "../runtime/mcp-bootstrap.js"
+import { ensureMcpAutoInstall } from "../runtime/mcp-auto-install.js"
 import { writeTextFileAtomic } from "../runtime/atomic-write.js"
 import {
   resolveModeStateFilePath,
@@ -183,6 +184,11 @@ export function createPluginInterface(input: {
         ...(managers.userHome ? { userHome: managers.userHome } : {}),
       })
       const pluginRegistration = await ensureOpenCodePluginRegistration({
+        ...(managers.userHome ? { userHome: managers.userHome } : {}),
+      })
+
+      await ensureMcpAutoInstall({
+        workspaceRoot: managers.workspaceRoot,
         ...(managers.userHome ? { userHome: managers.userHome } : {}),
       })
 

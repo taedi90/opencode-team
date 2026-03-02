@@ -22,10 +22,11 @@
 
 ## 판정 규칙
 1. manifest가 없으면 `mcp_manifest_exists=fail`.
-2. required server command 누락 시 `mcp_required_servers_configured=fail`.
+2. required stdio server command 누락 또는 required remote server URL 누락/형식 오류 시 `mcp_required_servers_configured=fail`.
 3. required server disabled면 `mcp_required_servers_enabled=fail`.
 4. reachability 미검사면 `mcp_required_servers_reachable=warn`.
-5. role별 allowlist가 비어 있으면 `agent_tool_policy_valid=fail`.
+5. reachability 검사 결과 required+enabled 서버 중 미도달 항목이 있으면 `mcp_required_servers_reachable=fail`.
+6. role별 allowlist가 비어 있으면 `agent_tool_policy_valid=fail`.
 
 ## 구현
 - 코드: `src/runtime/mcp-doctor-contract.ts`
