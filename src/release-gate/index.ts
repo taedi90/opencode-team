@@ -178,6 +178,16 @@ function hasKey(record: unknown, key: string): boolean {
   return typeof record === "object" && record !== null && key in record
 }
 
+function isRunJsonContract(value: unknown, expectedMode: string): boolean {
+  if (!(hasKey(value, "mode") && hasKey(value, "source") && hasKey(value, "stateFilePath"))) {
+    return false
+  }
+
+  const mode = (value as { mode?: unknown }).mode
+  const source = (value as { source?: unknown }).source
+  return mode === expectedMode && source === "slash"
+}
+
 export async function runReleaseGate(
   workspaceRoot: string,
   options: ReleaseGateOptions = {},
@@ -201,7 +211,7 @@ export async function runReleaseGate(
     checkContains("architecture_documenter_contract", architecture, ["documenter", "README", "docs/"]),
     checkContains("user_guide_runtime_sections", userGuide, ["원샷 orchestrator", "cancel/resume", "MCP", "documenter"]),
     checkContains("release_gate_checklist", gateChecklist, ["필수 시나리오", "차단 규칙", "릴리스 노트"]),
-    checkContains("e2e_evidence", e2eEvidence, ["명령", "결과", "근거"]),
+    checkContains("e2e_evidence", e2eEvidence, ["명령", "결과", "근거", "/ulw-loop"]),
     checkCiCommands("ci_enforces_release_gate", ciWorkflow, ["npm run release:gate", "npm test", "npm run typecheck", "npm run build"]),
     checkPackageReleaseGateScript("package_has_release_gate_script", packageJson),
     checkContains("role_prompt_contract_tests_present", rolePromptContractTest, ["role prompt contract"]),
@@ -241,17 +251,30 @@ export async function runReleaseGate(
   }
 
   try {
-    const runResult = await runCliJson(workspaceRoot, [
+    const ralphRunResult = await runCliJson(workspaceRoot, [
       "run",
       "/ralph --session release-gate --max-iterations 1 gate verification",
       "--json",
     ])
     checks.push(
-      checkBehaviorContract("behavior_run_json_contract", runResult, (value) => (
-        hasKey(value, "mode")
-        && hasKey(value, "source")
-        && hasKey(value, "stateFilePath")
-      )),
+      checkBehaviorContract(
+        "behavior_run_json_contract_ralph",
+        ralphRunResult,
+        (value) => isRunJsonContract(value, "ralph"),
+      ),
+    )
+
+    const ulwLoopRunResult = await runCliJson(workspaceRoot, [
+      "run",
+      "/ulw-loop --session release-gate --max-iterations 1 gate verification",
+      "--json",
+    ])
+    checks.push(
+      checkBehaviorContract(
+        "behavior_run_json_contract_ulw_loop",
+        ulwLoopRunResult,
+        (value) => isRunJsonContract(value, "ulw_loop"),
+      ),
     )
   } catch (error) {
     checks.push({

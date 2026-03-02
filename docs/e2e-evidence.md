@@ -12,6 +12,7 @@
 - `npm run cli -- run "/orchestrate implement #29 one-shot"`
 - `npm run cli -- run "/ultrawork --session e2e-1 parallel implementation"`
 - `npm run cli -- run "/ralph --session e2e-1 --max-iterations 3 verify completion"`
+- `npm run cli -- run "/ulw-loop --session e2e-1 --max-iterations 3 implement #31"`
 - `npm run cli -- run "/cancel --session e2e-1 --target ralph"`
 
 ## 결과

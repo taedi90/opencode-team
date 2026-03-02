@@ -61,7 +61,7 @@ describe("release gate", () => {
     )
     await writeFile(
       join(workspaceRoot, "docs", "e2e-evidence.md"),
-      "명령 결과 근거\n",
+      "명령 결과 근거 /ulw-loop\n",
       "utf8",
     )
     await writeFile(
@@ -101,6 +101,13 @@ describe("release gate", () => {
               checks: [],
             }
           }
+          if (joined.includes("/ulw-loop")) {
+            return {
+              mode: "ulw_loop",
+              source: "slash",
+              stateFilePath: "/tmp/state-ulw.json",
+            }
+          }
           return {
             mode: "ralph",
             source: "slash",
@@ -134,7 +141,7 @@ describe("release gate", () => {
       "필수 시나리오 차단 규칙 릴리스 노트\n",
       "utf8",
     )
-    await writeFile(join(workspaceRoot, "docs", "e2e-evidence.md"), "명령 결과 근거\n", "utf8")
+    await writeFile(join(workspaceRoot, "docs", "e2e-evidence.md"), "명령 결과 근거 /ulw-loop\n", "utf8")
     await writeFile(
       join(workspaceRoot, ".github", "workflows", "ci.yml"),
       "npm test\nnpm run typecheck\nnpm run build\nnpm run release:gate\n",
@@ -163,6 +170,7 @@ describe("release gate", () => {
     })
 
     expect(result.pass).toBe(false)
-    expect(result.checks.some((check) => check.name === "behavior_run_json_contract" && !check.pass)).toBe(true)
+    expect(result.checks.some((check) => check.name === "behavior_run_json_contract_ralph" && !check.pass)).toBe(true)
+    expect(result.checks.some((check) => check.name === "behavior_run_json_contract_ulw_loop" && !check.pass)).toBe(true)
   })
 })
