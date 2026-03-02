@@ -37,5 +37,8 @@
     "@types/node": "^24.4.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.2.15"
   }
 }
