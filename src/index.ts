@@ -1,10 +1,10 @@
-export * from "./agents/index.js"
-export * from "./doctor/index.js"
-export * from "./config/index.js"
-export * from "./execution/index.js"
-export * from "./github/index.js"
-export * from "./planning/index.js"
-export * from "./pipeline/index.js"
-export * from "./plugin/index.js"
-export * from "./release-gate/index.js"
-export * from "./runtime/index.js"
+export { runCli } from "./cli/index.js"
+export { createPluginRuntime } from "./plugin/index.js"
+export type {
+  DoctorCheck,
+  DoctorCommandResult,
+  InstallCommandResult,
+  PluginInterface,
+  PluginRuntimeOptions,
+  RunCommandResult,
+} from "./plugin/types.js"
