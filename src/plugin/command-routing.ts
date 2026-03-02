@@ -3,6 +3,7 @@ export const RUN_COMMAND_MODES = ["orchestrator", "ultrawork", "ralph", "ulw_loo
 export type RunCommandMode = (typeof RUN_COMMAND_MODES)[number]
 export type CancelTargetMode = "orchestrator" | "ultrawork" | "ralph"
 export type RunRouteSource = "slash" | "keyword" | "default"
+export type RunProfile = "auto"
 
 export interface ParsedRunCommand {
   mode: RunCommandMode
@@ -12,6 +13,7 @@ export interface ParsedRunCommand {
   sessionId: string
   maxIterations?: number
   cancelTargetMode: CancelTargetMode
+  profile?: RunProfile
   command?: string
 }
 
@@ -90,11 +92,13 @@ function parseArgSchema(args: string[]): {
   sessionId: string
   maxIterations?: number
   cancelTargetMode: CancelTargetMode
+  profile?: RunProfile
 } {
   const taskTokens: string[] = []
   let sessionId = "default"
   let maxIterations: number | undefined
   let cancelTargetMode: CancelTargetMode = "orchestrator"
+  let profile: RunProfile | undefined
 
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index]
@@ -128,6 +132,18 @@ function parseArgSchema(args: string[]): {
       continue
     }
 
+    if (token === "--profile") {
+      if (typeof next !== "string" || next.trim().length === 0) {
+        throw new Error("--profile requires a value")
+      }
+      if (next !== "auto") {
+        throw new Error(`unknown profile: ${next}`)
+      }
+      profile = "auto"
+      index += 1
+      continue
+    }
+
     taskTokens.push(token)
   }
 
@@ -136,6 +152,7 @@ function parseArgSchema(args: string[]): {
     sessionId,
     ...(maxIterations ? { maxIterations } : {}),
     cancelTargetMode,
+    ...(profile ? { profile } : {}),
   }
 }
 
@@ -172,6 +189,7 @@ export function parseRunCommand(rawTask: string): ParsedRunCommand {
       sessionId: parsed.sessionId,
       ...(parsed.maxIterations ? { maxIterations: parsed.maxIterations } : {}),
       cancelTargetMode: parsed.cancelTargetMode,
+      ...(parsed.profile ? { profile: parsed.profile } : {}),
       command,
     }
   }
@@ -186,5 +204,6 @@ export function parseRunCommand(rawTask: string): ParsedRunCommand {
     sessionId: parsed.sessionId,
     ...(parsed.maxIterations ? { maxIterations: parsed.maxIterations } : {}),
     cancelTargetMode: parsed.cancelTargetMode,
+    ...(parsed.profile ? { profile: parsed.profile } : {}),
   }
 }

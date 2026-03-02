@@ -42,11 +42,34 @@ export interface AgentToolPolicy {
 
 export type AgentToolPolicies = Record<AgentRole, AgentToolPolicy>
 
+export interface WorkflowAutoProfileConfig {
+  max_changed_files_for_code_only: number
+  require_architect_keywords: string[]
+  require_critic_keywords: string[]
+  require_research_keywords: string[]
+  require_docs_keywords: string[]
+}
+
+export interface WorkflowBudgetsConfig {
+  max_role_runs: number
+  max_stage_failures: number
+  max_total_latency_ms: number
+  max_artifact_bytes: number
+}
+
+export interface WorkflowConfig {
+  policy_enabled: boolean
+  notepad_enabled: boolean
+  auto_profile: WorkflowAutoProfileConfig
+  budgets: WorkflowBudgetsConfig
+}
+
 export interface OpenCodeTeamConfig {
   merge_policy: MergePolicyConfig
   models: ModelsConfig
   mcp: McpConfig
   agent_tools: AgentToolPolicies
+  workflow: WorkflowConfig
 }
 
 export interface LoadMergedConfigOptions {
@@ -91,6 +114,12 @@ interface OpenCodeTeamConfigPatch {
     servers?: Record<string, Partial<McpServerConfig>>
   }
   agent_tools?: Partial<Record<AgentRole, Partial<AgentToolPolicy>>>
+  workflow?: {
+    policy_enabled?: boolean
+    notepad_enabled?: boolean
+    auto_profile?: Partial<WorkflowAutoProfileConfig>
+    budgets?: Partial<WorkflowBudgetsConfig>
+  }
 }
 
 const CONFIG_FILE_NAME = "opencode-team.json"
@@ -201,6 +230,23 @@ export const DEFAULT_CONFIG: OpenCodeTeamConfig = {
       deny: ["bash", "github"],
     },
   },
+  workflow: {
+    policy_enabled: false,
+    notepad_enabled: false,
+    auto_profile: {
+      max_changed_files_for_code_only: 6,
+      require_research_keywords: ["research", "investigate", "compare", "benchmark", "root cause", "분석", "조사", "비교", "원인"],
+      require_architect_keywords: ["design", "architecture", "refactor", "migration", "schema", "infra", "auth", "security", "performance", "아키텍처", "설계", "리팩터", "마이그레이션", "인프라", "보안", "성능"],
+      require_critic_keywords: ["risk", "pitfall", "edge", "audit", "review", "리스크", "검토", "감사", "엣지"],
+      require_docs_keywords: ["docs", "readme", "guide", "documentation", "문서", "가이드", "README"],
+    },
+    budgets: {
+      max_role_runs: 200,
+      max_stage_failures: 3,
+      max_total_latency_ms: 1800000,
+      max_artifact_bytes: 2097152,
+    },
+  },
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -240,6 +286,23 @@ function cloneDefaults(): OpenCodeTeamConfig {
       servers: mcpServers,
     },
     agent_tools: agentTools,
+    workflow: {
+      policy_enabled: DEFAULT_CONFIG.workflow.policy_enabled,
+      notepad_enabled: DEFAULT_CONFIG.workflow.notepad_enabled,
+      auto_profile: {
+        max_changed_files_for_code_only: DEFAULT_CONFIG.workflow.auto_profile.max_changed_files_for_code_only,
+        require_architect_keywords: [...DEFAULT_CONFIG.workflow.auto_profile.require_architect_keywords],
+        require_critic_keywords: [...DEFAULT_CONFIG.workflow.auto_profile.require_critic_keywords],
+        require_research_keywords: [...DEFAULT_CONFIG.workflow.auto_profile.require_research_keywords],
+        require_docs_keywords: [...DEFAULT_CONFIG.workflow.auto_profile.require_docs_keywords],
+      },
+      budgets: {
+        max_role_runs: DEFAULT_CONFIG.workflow.budgets.max_role_runs,
+        max_stage_failures: DEFAULT_CONFIG.workflow.budgets.max_stage_failures,
+        max_total_latency_ms: DEFAULT_CONFIG.workflow.budgets.max_total_latency_ms,
+        max_artifact_bytes: DEFAULT_CONFIG.workflow.budgets.max_artifact_bytes,
+      },
+    },
   }
 }
 
@@ -296,7 +359,170 @@ function mergeConfig(base: OpenCodeTeamConfig, patch: OpenCodeTeamConfigPatch): 
       servers: mergedMcpServers,
     },
     agent_tools: mergedAgentTools,
+    workflow: {
+      ...base.workflow,
+      ...patch.workflow,
+      auto_profile: {
+        ...base.workflow.auto_profile,
+        ...patch.workflow?.auto_profile,
+      },
+      budgets: {
+        ...base.workflow.budgets,
+        ...patch.workflow?.budgets,
+      },
+    },
   }
+}
+
+function parseWorkflowKeywordList(
+  value: unknown,
+  warnings: string[],
+  fieldPath: string,
+): string[] | undefined {
+  return parseToolList(value, warnings, fieldPath)
+}
+
+function parsePositiveInteger(
+  value: unknown,
+  warnings: string[],
+  fieldPath: string,
+): number | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    warnings.push(`${fieldPath} must be a positive integer`)
+    return undefined
+  }
+
+  return value
+}
+
+function parseWorkflow(
+  value: unknown,
+  warnings: string[],
+): NonNullable<OpenCodeTeamConfigPatch["workflow"]> {
+  if (!isRecord(value)) return {}
+
+  const next: NonNullable<OpenCodeTeamConfigPatch["workflow"]> = {}
+
+  if (value.policy_enabled !== undefined) {
+    if (typeof value.policy_enabled === "boolean") {
+      next.policy_enabled = value.policy_enabled
+    } else {
+      warnings.push("workflow.policy_enabled must be boolean")
+    }
+  }
+
+  if (value.notepad_enabled !== undefined) {
+    if (typeof value.notepad_enabled === "boolean") {
+      next.notepad_enabled = value.notepad_enabled
+    } else {
+      warnings.push("workflow.notepad_enabled must be boolean")
+    }
+  }
+
+  if (isRecord(value.auto_profile)) {
+    const autoProfilePatch: Partial<WorkflowAutoProfileConfig> = {}
+
+    if (value.auto_profile.max_changed_files_for_code_only !== undefined) {
+      const parsed = parsePositiveInteger(
+        value.auto_profile.max_changed_files_for_code_only,
+        warnings,
+        "workflow.auto_profile.max_changed_files_for_code_only",
+      )
+      if (parsed !== undefined) {
+        autoProfilePatch.max_changed_files_for_code_only = parsed
+      }
+    }
+
+    if (value.auto_profile.require_architect_keywords !== undefined) {
+      const parsed = parseWorkflowKeywordList(
+        value.auto_profile.require_architect_keywords,
+        warnings,
+        "workflow.auto_profile.require_architect_keywords",
+      )
+      if (parsed) {
+        autoProfilePatch.require_architect_keywords = parsed
+      }
+    }
+
+    if (value.auto_profile.require_critic_keywords !== undefined) {
+      const parsed = parseWorkflowKeywordList(
+        value.auto_profile.require_critic_keywords,
+        warnings,
+        "workflow.auto_profile.require_critic_keywords",
+      )
+      if (parsed) {
+        autoProfilePatch.require_critic_keywords = parsed
+      }
+    }
+
+    if (value.auto_profile.require_research_keywords !== undefined) {
+      const parsed = parseWorkflowKeywordList(
+        value.auto_profile.require_research_keywords,
+        warnings,
+        "workflow.auto_profile.require_research_keywords",
+      )
+      if (parsed) {
+        autoProfilePatch.require_research_keywords = parsed
+      }
+    }
+
+    if (value.auto_profile.require_docs_keywords !== undefined) {
+      const parsed = parseWorkflowKeywordList(
+        value.auto_profile.require_docs_keywords,
+        warnings,
+        "workflow.auto_profile.require_docs_keywords",
+      )
+      if (parsed) {
+        autoProfilePatch.require_docs_keywords = parsed
+      }
+    }
+
+    if (Object.keys(autoProfilePatch).length > 0) {
+      next.auto_profile = autoProfilePatch
+    }
+  } else if (value.auto_profile !== undefined) {
+    warnings.push("workflow.auto_profile must be an object")
+  }
+
+  if (isRecord(value.budgets)) {
+    const budgetsPatch: Partial<WorkflowBudgetsConfig> = {}
+
+    if (value.budgets.max_role_runs !== undefined) {
+      const parsed = parsePositiveInteger(value.budgets.max_role_runs, warnings, "workflow.budgets.max_role_runs")
+      if (parsed !== undefined) {
+        budgetsPatch.max_role_runs = parsed
+      }
+    }
+
+    if (value.budgets.max_stage_failures !== undefined) {
+      const parsed = parsePositiveInteger(value.budgets.max_stage_failures, warnings, "workflow.budgets.max_stage_failures")
+      if (parsed !== undefined) {
+        budgetsPatch.max_stage_failures = parsed
+      }
+    }
+
+    if (value.budgets.max_total_latency_ms !== undefined) {
+      const parsed = parsePositiveInteger(value.budgets.max_total_latency_ms, warnings, "workflow.budgets.max_total_latency_ms")
+      if (parsed !== undefined) {
+        budgetsPatch.max_total_latency_ms = parsed
+      }
+    }
+
+    if (value.budgets.max_artifact_bytes !== undefined) {
+      const parsed = parsePositiveInteger(value.budgets.max_artifact_bytes, warnings, "workflow.budgets.max_artifact_bytes")
+      if (parsed !== undefined) {
+        budgetsPatch.max_artifact_bytes = parsed
+      }
+    }
+
+    if (Object.keys(budgetsPatch).length > 0) {
+      next.budgets = budgetsPatch
+    }
+  } else if (value.budgets !== undefined) {
+    warnings.push("workflow.budgets must be an object")
+  }
+
+  return next
 }
 
 function parseMergePolicy(
@@ -494,6 +720,7 @@ function normalizeConfig(raw: unknown, warnings: string[]): OpenCodeTeamConfigPa
     models: parseModels(raw.models, warnings),
     mcp: parseMcpServers(raw.mcp, warnings),
     agent_tools: parseAgentToolPolicies(raw.agent_tools, warnings),
+    workflow: parseWorkflow(raw.workflow, warnings),
   }
 }
 

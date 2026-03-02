@@ -37,4 +37,23 @@ describe("command routing", () => {
     expect(parsed.cancelTargetMode).toBe("ralph")
     expect(parsed.sessionId).toBe("release-1")
   })
+
+  it("parses --profile auto", () => {
+    const parsed = parseRunCommand("/orchestrate --profile auto implement")
+    expect(parsed.mode).toBe("orchestrator")
+    expect(parsed.profile).toBe("auto")
+    expect(parsed.task).toBe("implement")
+  })
+
+  it("keeps default behavior when --profile is absent", () => {
+    const parsed = parseRunCommand("/orchestrate implement")
+    expect(parsed).not.toHaveProperty("profile")
+    expect(parsed.task).toBe("implement")
+  })
+
+  it("throws on unknown profile values", () => {
+    expect(() => parseRunCommand("/orchestrate --profile fast implement")).toThrow(
+      "unknown profile: fast",
+    )
+  })
 })
