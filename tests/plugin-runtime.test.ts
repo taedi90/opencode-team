@@ -48,6 +48,58 @@ describe("plugin runtime", () => {
     expect(result.stateFilePath).toContain(".agent-guide/runtime/state/sessions/default/workflow-state.json")
   })
 
+  it("runs ultrawork and ralph loop from a single slash command", async () => {
+    const { workspaceRoot, userHome } = await createTempWorkspace()
+    const runtime = createPluginRuntime({ workspaceRoot, userHome })
+
+    await runtime.install()
+    const result = await runtime.run("/ulw-loop --session combo-1 --max-iterations 3 implement #31")
+
+    expect(result.status).toBe("completed")
+    expect(result.mode).toBe("ulw_loop")
+    expect(result.stateFilePath).toContain(".agent-guide/runtime/state/sessions/combo-1/ralph-state.json")
+  })
+
+  it("falls back to non-github workflow when gh cli is unavailable", async () => {
+    const { workspaceRoot, userHome } = await createTempWorkspace()
+    const runtime = createPluginRuntime({ workspaceRoot, userHome })
+
+    await runtime.install()
+
+    const previousPath = process.env.PATH
+    const previousOwner = process.env.OPENCODE_GITHUB_OWNER
+    const previousRepo = process.env.OPENCODE_GITHUB_REPO
+
+    process.env.PATH = "/nonexistent"
+    process.env.OPENCODE_GITHUB_OWNER = "acme"
+    process.env.OPENCODE_GITHUB_REPO = "demo"
+
+    try {
+      const result = await runtime.run("/orchestrate --session no-gh implement #35")
+
+      expect(result.status).toBe("completed")
+      expect(result.error).toBeUndefined()
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env.PATH
+      } else {
+        process.env.PATH = previousPath
+      }
+
+      if (previousOwner === undefined) {
+        delete process.env.OPENCODE_GITHUB_OWNER
+      } else {
+        process.env.OPENCODE_GITHUB_OWNER = previousOwner
+      }
+
+      if (previousRepo === undefined) {
+        delete process.env.OPENCODE_GITHUB_REPO
+      } else {
+        process.env.OPENCODE_GITHUB_REPO = previousRepo
+      }
+    }
+  })
+
   it("returns doctor checks", async () => {
     const { workspaceRoot, userHome } = await createTempWorkspace()
     const runtime = createPluginRuntime({ workspaceRoot, userHome })
@@ -74,6 +126,25 @@ describe("plugin runtime", () => {
 
     expect(log).toContain("\"reason_code\":\"allowed\"")
     expect(log).toContain("\"agent\":\"orchestrator\"")
+    expect(log).toContain("\"session_id\":\"default\"")
+    expect(log).toContain("\"stage\":\"requirements\"")
+  })
+
+  it("writes workflow event log during orchestrator run", async () => {
+    const { workspaceRoot, userHome } = await createTempWorkspace()
+    const runtime = createPluginRuntime({ workspaceRoot, userHome })
+
+    await runtime.install()
+    await runtime.run("/orchestrate implement #29")
+
+    const events = await readFile(
+      join(workspaceRoot, ".agent-guide", "runtime", "workflow-events.jsonl"),
+      "utf8",
+    )
+
+    expect(events).toContain("\"session_id\":\"default\"")
+    expect(events).toContain("\"stage\":\"requirements\"")
+    expect(events).toContain("\"phase\":\"starting\"")
   })
 
   it("persists orchestrator mode state and supports terminal resume", async () => {

@@ -11,11 +11,16 @@ import { safeCreateHook } from "./safe-hook.js"
 import type { PluginHooks } from "./types.js"
 
 export function createHooks(input: { workspaceRoot: string }): PluginHooks {
-  const contextPathByTask = new Map<string, string>()
+  const contextPathByRun = new Map<string, string>()
+
+  function toRunKey(payload: { sessionId: string; task: string }): string {
+    return `${payload.sessionId}::${payload.task}`
+  }
 
   const beforeRun = safeCreateHook<{
     task: string
-    mode: "orchestrator" | "ultrawork" | "ralph" | "cancel"
+    sessionId: string
+    mode: "orchestrator" | "ultrawork" | "ralph" | "ulw_loop" | "cancel"
     source: "slash" | "keyword" | "default"
   }>({
     name: "beforeRun",
@@ -28,20 +33,21 @@ export function createHooks(input: { workspaceRoot: string }): PluginHooks {
       })
 
       if (preload.issueContextPath) {
-        contextPathByTask.set(payload.task, preload.issueContextPath)
+        contextPathByRun.set(toRunKey(payload), preload.issueContextPath)
       }
     },
   })
 
   const afterRun = safeCreateHook<{
     task: string
-    mode: "orchestrator" | "ultrawork" | "ralph" | "cancel"
+    sessionId: string
+    mode: "orchestrator" | "ultrawork" | "ralph" | "ulw_loop" | "cancel"
     source: "slash" | "keyword" | "default"
     status: "completed" | "failed"
   }>({
     name: "afterRun",
     create: () => async (payload) => {
-      const issueContextPath = contextPathByTask.get(payload.task)
+      const issueContextPath = contextPathByRun.get(toRunKey(payload))
       await runPostLifecycle({
         workspaceRoot: input.workspaceRoot,
         task: payload.task,
@@ -51,14 +57,17 @@ export function createHooks(input: { workspaceRoot: string }): PluginHooks {
         ...(issueContextPath ? { issueContextPath } : {}),
       })
 
-      contextPathByTask.delete(payload.task)
+      contextPathByRun.delete(toRunKey(payload))
     },
   })
 
   const onToolPolicyEvaluated = safeCreateHook<{
     task: string
-    mode: "orchestrator" | "ultrawork" | "ralph" | "cancel"
+    sessionId: string
+    mode: "orchestrator" | "ultrawork" | "ralph" | "ulw_loop" | "cancel"
     source: "slash" | "keyword" | "default"
+    stage?: string
+    nodeId?: string
     agentRole: string
     toolName: string
     allowed: boolean
@@ -67,12 +76,14 @@ export function createHooks(input: { workspaceRoot: string }): PluginHooks {
   }>({
     name: "onToolPolicyEvaluated",
     create: () => async (payload) => {
-      const issueContextPath = contextPathByTask.get(payload.task)
+      const issueContextPath = contextPathByRun.get(toRunKey(payload))
       if (issueContextPath) {
         await appendInRunMemoryReference({
           workspaceRoot: input.workspaceRoot,
           issueContextPath,
-          referencePath: `tool-policy:${payload.agentRole}:${payload.toolName}`,
+          referencePath: payload.stage
+            ? `tool-policy:${payload.stage}:${payload.agentRole}:${payload.toolName}`
+            : `tool-policy:${payload.agentRole}:${payload.toolName}`,
           reason: `policy ${payload.allowed ? "allow" : "deny"} (${payload.reasonCode})`,
         })
       }
@@ -86,6 +97,9 @@ export function createHooks(input: { workspaceRoot: string }): PluginHooks {
         tool: payload.toolName,
         policy_source: payload.policySource as "default" | "config",
         evaluated_at: new Date().toISOString(),
+      }, {
+        sessionId: payload.sessionId,
+        ...(payload.stage ? { stage: payload.stage } : {}),
       })
       await appendFile(auditPath, `${JSON.stringify(entry)}\n`, "utf8")
     },

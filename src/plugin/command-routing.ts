@@ -1,7 +1,7 @@
-export const RUN_COMMAND_MODES = ["orchestrator", "ultrawork", "ralph", "cancel"] as const
+export const RUN_COMMAND_MODES = ["orchestrator", "ultrawork", "ralph", "ulw_loop", "cancel"] as const
 
 export type RunCommandMode = (typeof RUN_COMMAND_MODES)[number]
-export type CancelTargetMode = Exclude<RunCommandMode, "cancel">
+export type CancelTargetMode = "orchestrator" | "ultrawork" | "ralph"
 export type RunRouteSource = "slash" | "keyword" | "default"
 
 export interface ParsedRunCommand {
@@ -34,6 +34,7 @@ const SLASH_SCHEMAS: readonly SlashCommandSchema[] = [
   { mode: "orchestrator", aliases: ["orchestrate"] },
   { mode: "ultrawork", aliases: ["ultrawork", "ulw"] },
   { mode: "ralph", aliases: ["ralph"] },
+  { mode: "ulw_loop", aliases: ["ulw-loop", "ultrawork-ralph"] },
   { mode: "cancel", aliases: ["cancel"] },
 ]
 

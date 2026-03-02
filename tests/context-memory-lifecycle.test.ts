@@ -43,7 +43,13 @@ afterEach(async () => {
 describe("context memory lifecycle", () => {
   it("preloads context and memory references", async () => {
     const workspaceRoot = await createWorkspace()
-    await runPreloadLifecycle({
+    await writeFile(
+      join(workspaceRoot, ".agent-guide", "memory", "memory-alpha-rule.md"),
+      "# Memory Alpha\n",
+      "utf8",
+    )
+
+    const preload = await runPreloadLifecycle({
       workspaceRoot,
       task: "implement #28",
       mode: "orchestrator",
@@ -55,6 +61,10 @@ describe("context memory lifecycle", () => {
       "utf8",
     )
     expect(context).toContain("참고:")
+    expect(preload.memoryPaths.map((item) => item.split("/").pop())).toEqual([
+      "memory-alpha-rule.md",
+      "memory-runtime-rule.md",
+    ])
   })
 
   it("writes post handoff, promotes memory, and cleans temp context", async () => {

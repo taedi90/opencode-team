@@ -30,19 +30,24 @@ export interface PluginTools {
 export interface PluginHooks {
   beforeRun: (input: {
     task: string
-    mode: "orchestrator" | "ultrawork" | "ralph" | "cancel"
+    sessionId: string
+    mode: "orchestrator" | "ultrawork" | "ralph" | "ulw_loop" | "cancel"
     source: "slash" | "keyword" | "default"
   }) => Promise<void>
   afterRun: (input: {
     task: string
-    mode: "orchestrator" | "ultrawork" | "ralph" | "cancel"
+    sessionId: string
+    mode: "orchestrator" | "ultrawork" | "ralph" | "ulw_loop" | "cancel"
     source: "slash" | "keyword" | "default"
     status: "completed" | "failed"
   }) => Promise<void>
   onToolPolicyEvaluated: (input: {
     task: string
-    mode: "orchestrator" | "ultrawork" | "ralph" | "cancel"
+    sessionId: string
+    mode: "orchestrator" | "ultrawork" | "ralph" | "ulw_loop" | "cancel"
     source: "slash" | "keyword" | "default"
+    stage?: string
+    nodeId?: string
     agentRole: string
     toolName: string
     allowed: boolean
@@ -64,7 +69,7 @@ export interface InstallCommandResult {
 export interface RunCommandResult {
   status: "completed" | "failed"
   stateFilePath: string
-  mode: "orchestrator" | "ultrawork" | "ralph" | "cancel"
+  mode: "orchestrator" | "ultrawork" | "ralph" | "ulw_loop" | "cancel"
   source: "slash" | "keyword" | "default"
   failedStage?: string
   error?: string

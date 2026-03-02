@@ -22,6 +22,15 @@ describe("command routing", () => {
     expect(parsed.task).toBe("verify")
   })
 
+  it("parses combined ulw-loop slash command", () => {
+    const parsed = parseRunCommand("/ulw-loop --session sprint-a --max-iterations 7 implement")
+    expect(parsed.mode).toBe("ulw_loop")
+    expect(parsed.source).toBe("slash")
+    expect(parsed.sessionId).toBe("sprint-a")
+    expect(parsed.maxIterations).toBe(7)
+    expect(parsed.task).toBe("implement")
+  })
+
   it("parses cancel target mode", () => {
     const parsed = parseRunCommand("/cancel --session release-1 --target ralph")
     expect(parsed.mode).toBe("cancel")

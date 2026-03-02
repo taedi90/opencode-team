@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
-import { readFile } from "node:fs/promises"
+import { appendFile, mkdir, readFile } from "node:fs/promises"
+import { dirname, join } from "node:path"
 import { promisify } from "node:util"
 
 import {
@@ -34,6 +35,26 @@ const execFileAsync = promisify(execFile)
 
 function nowIso(): string {
   return new Date().toISOString()
+}
+
+async function appendWorkflowEvent(input: {
+  workspaceRoot: string
+  sessionId: string
+  task: string
+  stage: string
+  phase: "starting" | "completed" | "failed"
+  workflowStatePath: string
+}): Promise<void> {
+  const eventsPath = join(input.workspaceRoot, ".agent-guide", "runtime", "workflow-events.jsonl")
+  await mkdir(dirname(eventsPath), { recursive: true })
+  await appendFile(eventsPath, `${JSON.stringify({
+    timestamp: nowIso(),
+    session_id: input.sessionId,
+    task: input.task,
+    stage: input.stage,
+    phase: input.phase,
+    workflow_state_path: input.workflowStatePath,
+  })}\n`, "utf8")
 }
 
 async function writeModeState(state: ModeState, workspaceRoot: string): Promise<string> {
@@ -83,8 +104,40 @@ function parseGithubRepoRef(remoteUrl: string): { owner: string; repo: string } 
   }
 }
 
+function hasGithubToken(): boolean {
+  return Boolean(
+    process.env.GH_TOKEN
+    || process.env.GITHUB_TOKEN
+    || process.env.OPENCODE_GITHUB_TOKEN,
+  )
+}
+
+async function isGhCliUsable(workspaceRoot: string): Promise<boolean> {
+  try {
+    await execFileAsync("gh", ["--version"], { cwd: workspaceRoot })
+  } catch {
+    return false
+  }
+
+  if (hasGithubToken()) {
+    return true
+  }
+
+  try {
+    await execFileAsync("gh", ["auth", "status"], { cwd: workspaceRoot })
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function resolveGithubAdapter(workspaceRoot: string): Promise<ReturnType<typeof createGhCliAdapter> | null> {
   try {
+    const ghUsable = await isGhCliUsable(workspaceRoot)
+    if (!ghUsable) {
+      return null
+    }
+
     const fromEnvOwner = process.env.OPENCODE_GITHUB_OWNER
     const fromEnvRepo = process.env.OPENCODE_GITHUB_REPO
     if (fromEnvOwner && fromEnvRepo) {
@@ -110,7 +163,7 @@ async function resolveGithubAdapter(workspaceRoot: string): Promise<ReturnType<t
   }
 }
 
-function resolveToolForMode(mode: "orchestrator" | "ultrawork" | "ralph" | "cancel"): string {
+function resolveToolForMode(mode: "orchestrator" | "ultrawork" | "ralph" | "ulw_loop" | "cancel"): string {
   if (mode === "cancel") {
     return "read"
   }
@@ -154,6 +207,7 @@ export function createPluginInterface(input: {
 
       await hooks.beforeRun({
         task: runTask,
+        sessionId: route.sessionId,
         mode: route.mode,
         source: route.source,
       })
@@ -167,6 +221,7 @@ export function createPluginInterface(input: {
 
       await hooks.onToolPolicyEvaluated({
         task: runTask,
+        sessionId: route.sessionId,
         mode: route.mode,
         source: route.source,
         agentRole: "orchestrator",
@@ -179,6 +234,7 @@ export function createPluginInterface(input: {
       if (!policy.allowed) {
         await hooks.afterRun({
           task: runTask,
+          sessionId: route.sessionId,
           mode: route.mode,
           source: route.source,
           status: "failed",
@@ -204,6 +260,7 @@ export function createPluginInterface(input: {
 
         await hooks.afterRun({
           task: runTask,
+          sessionId: route.sessionId,
           mode: route.mode,
           source: route.source,
           status: modeResult.status,
@@ -221,6 +278,61 @@ export function createPluginInterface(input: {
         return response
       }
 
+      if (route.mode === "ulw_loop") {
+        const ultraworkResult = await runModeOperation({
+          workspaceRoot: managers.workspaceRoot,
+          sessionId: route.sessionId,
+          mode: "ultrawork",
+          task: runTask,
+          ...(route.maxIterations ? { maxIterations: route.maxIterations } : {}),
+          resume: options.resume ?? false,
+        })
+
+        const ralphResult = ultraworkResult.status === "completed"
+          ? await runModeOperation({
+            workspaceRoot: managers.workspaceRoot,
+            sessionId: route.sessionId,
+            mode: "ralph",
+            task: runTask,
+            ...(route.maxIterations ? { maxIterations: route.maxIterations } : {}),
+            resume: options.resume ?? false,
+          })
+          : null
+
+        const status: RunCommandResult["status"] = ultraworkResult.status === "completed"
+          && ralphResult?.status === "completed"
+          ? "completed"
+          : "failed"
+
+        const response: RunCommandResult = {
+          status,
+          mode: route.mode,
+          source: route.source,
+          stateFilePath: ralphResult?.stateFilePath ?? ultraworkResult.stateFilePath,
+        }
+
+        const errorParts: string[] = []
+        if (ultraworkResult.error) {
+          errorParts.push(`ultrawork: ${ultraworkResult.error}`)
+        }
+        if (ralphResult?.error) {
+          errorParts.push(`ralph: ${ralphResult.error}`)
+        }
+        if (errorParts.length > 0) {
+          response.error = errorParts.join("; ")
+        }
+
+        await hooks.afterRun({
+          task: runTask,
+          sessionId: route.sessionId,
+          mode: route.mode,
+          source: route.source,
+          status,
+        })
+
+        return response
+      }
+
       if (route.mode === "cancel") {
         const cancelResult = await cancelModeOperation({
           workspaceRoot: managers.workspaceRoot,
@@ -229,6 +341,7 @@ export function createPluginInterface(input: {
         })
         await hooks.afterRun({
           task: runTask,
+          sessionId: route.sessionId,
           mode: route.mode,
           source: route.source,
           status: cancelResult.status,
@@ -260,6 +373,7 @@ export function createPluginInterface(input: {
           : "failed"
         await hooks.afterRun({
           task: runTask,
+          sessionId: route.sessionId,
           mode: route.mode,
           source: route.source,
           status: terminalStatus,
@@ -305,6 +419,9 @@ export function createPluginInterface(input: {
               return adapter ? { githubAutomationAdapter: adapter } : {}
             })()),
             onToolPolicyEvaluated: async ({
+              stage,
+              nodeId,
+              sessionId,
               agentRole,
               toolName,
               allowed,
@@ -313,8 +430,11 @@ export function createPluginInterface(input: {
             }) => {
               await hooks.onToolPolicyEvaluated({
                 task: runTask,
+                sessionId,
                 mode: route.mode,
                 source: route.source,
+                stage,
+                nodeId,
                 agentRole,
                 toolName,
                 allowed,
@@ -324,6 +444,14 @@ export function createPluginInterface(input: {
             },
             onStageTransition: async ({ stage, phase }) => {
               const updateAt = nowIso()
+              await appendWorkflowEvent({
+                workspaceRoot: managers.workspaceRoot,
+                sessionId: route.sessionId,
+                task: runTask,
+                stage,
+                phase,
+                workflowStatePath,
+              })
               await writeModeState({
                 version: 1,
                 mode: "orchestrator",
@@ -351,6 +479,7 @@ export function createPluginInterface(input: {
 
         await hooks.afterRun({
           task: runTask,
+          sessionId: route.sessionId,
           mode: route.mode,
           source: route.source,
           status: "failed",
@@ -380,6 +509,7 @@ export function createPluginInterface(input: {
 
       await hooks.afterRun({
         task: runTask,
+        sessionId: route.sessionId,
         mode: route.mode,
         source: route.source,
         status: result.status,

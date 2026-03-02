@@ -4,7 +4,7 @@ import { dirname, join } from "node:path"
 export interface LifecycleRunInput {
   workspaceRoot: string
   task: string
-  mode: "orchestrator" | "ultrawork" | "ralph" | "cancel"
+  mode: "orchestrator" | "ultrawork" | "ralph" | "ulw_loop" | "cancel"
   source: "slash" | "keyword" | "default"
 }
 
@@ -34,7 +34,7 @@ function toIssuePrefix(issueNumber: number): string {
 async function listFiles(path: string): Promise<string[]> {
   try {
     const entries = await readdir(path)
-    return entries
+    return entries.sort((left, right) => left.localeCompare(right))
   } catch (error) {
     if (
       error instanceof Error
