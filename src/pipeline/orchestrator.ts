@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto"
 import { execFile } from "node:child_process"
-import { access, readFile, readdir, rm } from "node:fs/promises"
-import { join, relative } from "node:path"
+import { access, appendFile, mkdir, readFile, readdir, rm } from "node:fs/promises"
+import { dirname, join, relative } from "node:path"
 import { promisify } from "node:util"
 
 import { runUltrawork } from "../execution/ultrawork.js"
@@ -24,6 +25,10 @@ import {
   type OpenCodeTeamConfig,
 } from "../config/index.js"
 import { writeTextFileAtomic } from "../runtime/atomic-write.js"
+import {
+  appendNotepadLines,
+  loadNotepadRuntimeOverlay,
+} from "../runtime/notepad-store.js"
 import { acquireSessionLock } from "../runtime/session-lock.js"
 import { assertStageArtifactContract } from "./artifact-contract.js"
 import { WORKFLOW_STAGES, type WorkflowStage } from "./stages.js"
@@ -40,12 +45,19 @@ import {
   type SubagentExecutor,
 } from "./subagent-executor.js"
 import { resolveStageAgentSequence } from "./agent-graph.js"
+import {
+  decideWorkflowPolicy,
+  type WorkflowPolicyDecision,
+} from "./workflow-policy.js"
 import type {
   ToolAccessReasonCode,
   ToolPolicySource,
 } from "../runtime/agent-tool-policy.js"
 
 const execFileAsync = promisify(execFile)
+let gitVersionAvailablePromise: Promise<boolean> | undefined
+
+type OptionalWorkflowRole = "researcher" | "architect" | "critic" | "reviewer" | "documenter"
 
 export interface WorkflowInput {
   task: string
@@ -77,6 +89,29 @@ export interface WorkflowState {
   agentRunsByStage: Partial<Record<WorkflowStage, WorkflowAgentRunArtifact[]>>
   artifactsByStage: Partial<Record<WorkflowStage, Record<string, unknown>>>
   artifacts: Record<string, unknown>
+  workflowPolicyExplain?: {
+    signals: string[]
+    reasons: string[]
+  }
+  workflowExecutionPlan?: {
+    profile: "auto"
+    untilStage: WorkflowStage
+    skip: {
+      researcher?: boolean
+      architect?: boolean
+      critic?: boolean
+      reviewer?: boolean
+      documenter?: boolean
+    }
+    budgets?: {
+      max_role_runs: number
+      max_stage_failures: number
+      max_total_latency_ms: number
+      max_artifact_bytes: number
+    }
+    source: string
+    planHash: string
+  }
   failedStage?: WorkflowStage
   error?: string
   updatedAt: string
@@ -127,6 +162,7 @@ export interface WorkflowRunOptions {
   }) => Promise<void> | void
   requireUserApproval?: boolean
   userApprovedMerge?: boolean
+  workflowProfile?: "auto"
 }
 
 export interface WorkflowRunResult {
@@ -368,6 +404,13 @@ async function pathExists(path: string): Promise<boolean> {
 
     throw error
   }
+}
+
+async function isGitVersionAvailable(): Promise<boolean> {
+  if (!gitVersionAvailablePromise) {
+    gitVersionAvailablePromise = execFileAsync("git", ["--version"]).then(() => true).catch(() => false)
+  }
+  return gitVersionAvailablePromise
 }
 
 async function listMarkdownFilesRecursive(rootDirectory: string, baseDirectory: string): Promise<string[]> {
@@ -686,6 +729,7 @@ function createDefaultExecutors(
   const DEFAULT_SUBAGENT_TIMEOUT_MS = 120_000
   const DEFAULT_SUBAGENT_MAX_RETRIES = 0
   const subagentExecutor = options.subagentExecutor ?? createScriptedSubagentExecutor()
+  const workflowSessionId = options.sessionId ?? "default"
   let runtimeConfigPromise: Promise<OpenCodeTeamConfig | undefined> | undefined
 
   async function resolveRuntimeConfig(): Promise<OpenCodeTeamConfig | undefined> {
@@ -717,6 +761,12 @@ function createDefaultExecutors(
     }>
   }): Promise<WorkflowAgentRun<TPayload>> {
     const runtimeConfig = await resolveRuntimeConfig()
+    const runtimeOverlay = runtimeConfig?.workflow.notepad_enabled === true
+      ? await loadNotepadRuntimeOverlay({
+        workspaceRoot: input.workingDirectory,
+        sessionId: workflowSessionId,
+      })
+      : ""
     const nodeId = resolveNodeId(inputRole.stage, inputRole.role, inputRole.index, inputRole.contextSuffix)
     const sessionId = createRoleSessionId(inputRole.stage, inputRole.role, inputRole.contextSuffix)
     const requestedTools = inputRole.requestedTools ?? []
@@ -772,6 +822,7 @@ function createDefaultExecutors(
       timeoutMs: DEFAULT_SUBAGENT_TIMEOUT_MS,
       maxRetries: DEFAULT_SUBAGENT_MAX_RETRIES,
       delegationPrompt,
+      ...(runtimeOverlay.length > 0 ? { runtimeOverlay } : {}),
       ...(runtimeConfig ? { config: runtimeConfig } : {}),
       ...(options.onToolPolicyEvaluated
         ? { onToolPolicyEvaluated: options.onToolPolicyEvaluated }
@@ -810,6 +861,12 @@ function createDefaultExecutors(
         }
 
         currentNode = resolveNodeId(stage, role, index)
+
+        if (role === "researcher" && shouldSkipOptionalRole(context.state, "researcher")) {
+          completedRoleCount = index + 1
+          currentNode = `${stage}:stage`
+          continue
+        }
 
         try {
           if (role === "orchestrator") {
@@ -979,6 +1036,10 @@ function createDefaultExecutors(
           if (roleIndex === undefined) {
             throw new Error("planning graph missing architect role")
           }
+          if (shouldSkipOptionalRole(context.state, "architect")) {
+            completedRoleCount = Math.max(completedRoleCount, roleIndex + 1)
+            return createDefaultPlanningArchitectReview(planningContext)
+          }
           const nodeSuffix = `iter-${planningContext.iteration}`
           currentNode = resolveNodeId(stage, role, roleIndex, nodeSuffix)
 
@@ -1011,6 +1072,10 @@ function createDefaultExecutors(
           const roleIndex = roleIndexByName.get(role)
           if (roleIndex === undefined) {
             throw new Error("planning graph missing critic role")
+          }
+          if (shouldSkipOptionalRole(context.state, "critic")) {
+            completedRoleCount = Math.max(completedRoleCount, roleIndex + 1)
+            return createDefaultPlanningCriticReview(planningContext)
           }
           const nodeSuffix = `iter-${planningContext.iteration}`
           currentNode = resolveNodeId(stage, role, roleIndex, nodeSuffix)
@@ -1309,6 +1374,12 @@ function createDefaultExecutors(
         const role = roles[index]
         if (!role) continue
         currentNode = resolveNodeId(stage, role, index)
+
+        if (role === "documenter" && shouldSkipOptionalRole(context.state, "documenter")) {
+          completedRoleCount = index + 1
+          currentNode = `${stage}:stage`
+          continue
+        }
 
         if (role === "developer") {
           try {
@@ -1851,6 +1922,19 @@ function createDefaultExecutors(
         if (!role) continue
         currentNode = resolveNodeId(stage, role, index)
 
+        if (role === "reviewer" && shouldSkipOptionalRole(context.state, "reviewer")) {
+          gateDecision = "approve"
+          reviewerHandoff = {
+            currentStatus: "review_skipped",
+            changedFiles: [],
+            openRisks: [],
+            nextAction: "proceed to merge execution",
+          }
+          completedRoleCount = index + 1
+          currentNode = `${stage}:stage`
+          continue
+        }
+
         if (role === "reviewer") {
           try {
             const roleRun = await runRole<{ gateDecision: "approve" | "request_changes" }>({
@@ -1860,10 +1944,11 @@ function createDefaultExecutors(
               requestedTools: ["read", "glob", "grep"],
               execute: async () => {
                 const openRisks: string[] = []
+                const documenterSkipped = shouldSkipOptionalRole(context.state, "documenter")
                 if (context.artifacts.verificationPassed !== true) {
                   openRisks.push("testing stage did not pass")
                 }
-                if (!context.artifacts.documentationSync || typeof context.artifacts.documentationSync !== "object") {
+                if (!documenterSkipped && (!context.artifacts.documentationSync || typeof context.artifacts.documentationSync !== "object")) {
                   openRisks.push("documentation sync result missing")
                 }
 
@@ -2112,6 +2197,108 @@ interface WorkflowStateV1 {
   updatedAt: string
 }
 
+type WorkflowExecutionPlanState = NonNullable<WorkflowState["workflowExecutionPlan"]>
+
+function buildWorkflowPlanStableString(plan: WorkflowExecutionPlanState): string {
+  const skip = plan.skip
+  const budgets = plan.budgets
+  return [
+    `profile=${plan.profile}`,
+    `untilStage=${plan.untilStage}`,
+    `skip.researcher=${skip.researcher === true ? "1" : "0"}`,
+    `skip.architect=${skip.architect === true ? "1" : "0"}`,
+    `skip.critic=${skip.critic === true ? "1" : "0"}`,
+    `skip.reviewer=${skip.reviewer === true ? "1" : "0"}`,
+    `skip.documenter=${skip.documenter === true ? "1" : "0"}`,
+    `budgets.max_role_runs=${budgets ? String(budgets.max_role_runs) : ""}`,
+    `budgets.max_stage_failures=${budgets ? String(budgets.max_stage_failures) : ""}`,
+    `budgets.max_total_latency_ms=${budgets ? String(budgets.max_total_latency_ms) : ""}`,
+    `budgets.max_artifact_bytes=${budgets ? String(budgets.max_artifact_bytes) : ""}`,
+    `source=${plan.source}`,
+  ].join("\n")
+}
+
+function buildWorkflowPlanHash(plan: WorkflowExecutionPlanState): string {
+  return createHash("sha256").update(buildWorkflowPlanStableString(plan)).digest("hex")
+}
+
+function buildCappedPolicyExplainSummary(explain: WorkflowPolicyDecision["explain"]): {
+  signalCount: number
+  reasonCount: number
+  signals: string[]
+  reasons: string[]
+} {
+  const capText = (value: string): string => (value.length > 120 ? `${value.slice(0, 117)}...` : value)
+  const capList = (items: readonly string[]): string[] => items.slice(0, 5).map((item) => capText(item))
+  return {
+    signalCount: explain.signals.length,
+    reasonCount: explain.reasons.length,
+    signals: capList(explain.signals),
+    reasons: capList(explain.reasons),
+  }
+}
+
+async function appendStructuredLog(
+  workingDirectory: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const path = join(workingDirectory, ".agent-guide", "runtime", "structured-log.jsonl")
+  await mkdir(dirname(path), { recursive: true })
+  await appendFile(path, `${JSON.stringify(payload)}\n`, "utf8")
+}
+
+async function resolveWorkflowPolicyState(input: {
+  config: OpenCodeTeamConfig
+  workflowProfile?: "auto"
+  task: string
+  workingDirectory: string
+}): Promise<{
+  explain?: NonNullable<WorkflowState["workflowPolicyExplain"]>
+  plan?: WorkflowExecutionPlanState
+  logPayload?: Record<string, unknown>
+}> {
+  if (input.workflowProfile !== "auto") {
+    return {}
+  }
+
+  const facts = {
+    task: input.task,
+    hasPackageJson: await pathExists(join(input.workingDirectory, "package.json")),
+    gitAvailable: await isGitVersionAvailable(),
+  }
+  const decision = decideWorkflowPolicy(input.config, facts)
+  const planWithoutHash = {
+    profile: "auto" as const,
+    untilStage: decision.plan.untilStage,
+    skip: { ...decision.plan.skip },
+    ...(decision.plan.budgets ? { budgets: { ...decision.plan.budgets } } : {}),
+    source: "workflow-policy:decideWorkflowPolicy",
+  }
+  const planHash = buildWorkflowPlanHash({
+    ...planWithoutHash,
+    planHash: "",
+  })
+  const plan: WorkflowExecutionPlanState = {
+    ...planWithoutHash,
+    planHash,
+  }
+
+  return {
+    explain: {
+      signals: [...decision.explain.signals],
+      reasons: [...decision.explain.reasons],
+    },
+    plan,
+    logPayload: {
+      timestamp: nowIso(),
+      event: "workflow_policy_decided",
+      sessionId: "",
+      planHash,
+      workflowPolicyExplainSummary: buildCappedPolicyExplainSummary(decision.explain),
+    },
+  }
+}
+
 function isWorkflowStage(value: unknown): value is WorkflowStage {
   return typeof value === "string" && WORKFLOW_STAGES.includes(value as WorkflowStage)
 }
@@ -2148,6 +2335,86 @@ function flattenAgentRunsByStage(
     }
   }
   return flattened
+}
+
+function shouldSkipOptionalRole(state: WorkflowState, role: OptionalWorkflowRole): boolean {
+  return state.workflowExecutionPlan?.skip[role] === true
+}
+
+async function appendStageNotepadSummary(input: {
+  workingDirectory: string
+  sessionId: string
+  stage: WorkflowStage
+  stageArtifacts: Record<string, unknown>
+}): Promise<void> {
+  const handoff = isRecord(input.stageArtifacts.handoff)
+    ? input.stageArtifacts.handoff
+    : {}
+
+  const changedFiles = Array.isArray(handoff.changedFiles)
+    ? handoff.changedFiles.filter((item): item is string => typeof item === "string")
+    : []
+  const openRisks = Array.isArray(handoff.openRisks)
+    ? handoff.openRisks.filter((item): item is string => typeof item === "string")
+    : []
+  const nextAction = typeof handoff.nextAction === "string"
+    ? handoff.nextAction
+    : ""
+
+  await appendNotepadLines({
+    workspaceRoot: input.workingDirectory,
+    sessionId: input.sessionId,
+    kind: "learnings",
+    lines: [`- stage=${input.stage} changed_files=${String(changedFiles.length)}`],
+  })
+  await appendNotepadLines({
+    workspaceRoot: input.workingDirectory,
+    sessionId: input.sessionId,
+    kind: "issues",
+    lines: [`- stage=${input.stage} open_risks=${openRisks.length > 0 ? openRisks.join("; ") : "none"}`],
+  })
+  await appendNotepadLines({
+    workspaceRoot: input.workingDirectory,
+    sessionId: input.sessionId,
+    kind: "decisions",
+    lines: [`- stage=${input.stage} next_action=${nextAction.length > 0 ? nextAction : "none"}`],
+  })
+}
+
+function evaluateWorkflowBudgetExceeded(state: WorkflowState): string | null {
+  const budgets = state.workflowExecutionPlan?.budgets
+  if (!budgets) {
+    return null
+  }
+
+  const allRuns = flattenAgentRunsByStage(state.agentRunsByStage)
+  if (allRuns.length > budgets.max_role_runs) {
+    return `budget_exceeded: max_role_runs exceeded (${String(allRuns.length)}>${String(budgets.max_role_runs)})`
+  }
+
+  const totalLatencyMs = allRuns.reduce((sum, run) => {
+    const latency = typeof run.latencyMs === "number" && Number.isFinite(run.latencyMs)
+      ? run.latencyMs
+      : 0
+    return sum + latency
+  }, 0)
+  if (totalLatencyMs > budgets.max_total_latency_ms) {
+    return `budget_exceeded: max_total_latency_ms exceeded (${String(totalLatencyMs)}>${String(budgets.max_total_latency_ms)})`
+  }
+
+  return null
+}
+
+function truncateAgentRunsByStage(
+  source: Partial<Record<WorkflowStage, WorkflowAgentRunArtifact[]>>,
+): Partial<Record<WorkflowStage, WorkflowAgentRunArtifact[]>> {
+  const truncated: Partial<Record<WorkflowStage, WorkflowAgentRunArtifact[]>> = {}
+  for (const stage of WORKFLOW_STAGES) {
+    if (source[stage]) {
+      truncated[stage] = []
+    }
+  }
+  return truncated
 }
 
 function migrateWorkflowState(raw: WorkflowState | WorkflowStateV1): WorkflowState {
@@ -2249,8 +2516,47 @@ function mergeAgentRunsForStage(input: {
   }
 }
 
-async function writeWorkflowState(path: string, state: WorkflowState): Promise<void> {
-  await writeTextFileAtomic(path, `${JSON.stringify(state, null, 2)}\n`)
+async function writeWorkflowState(path: string, state: WorkflowState, workingDirectory: string): Promise<void> {
+  const serialized = `${JSON.stringify(state, null, 2)}\n`
+  const maxArtifactBytes = state.workflowExecutionPlan?.budgets?.max_artifact_bytes
+
+  if (!maxArtifactBytes || Buffer.byteLength(serialized, "utf8") <= maxArtifactBytes) {
+    await writeTextFileAtomic(path, serialized)
+    return
+  }
+
+  const pointerDirectory = join(workingDirectory, ".agent-guide", "runtime", "state", "oversize")
+  await mkdir(pointerDirectory, { recursive: true })
+
+  const pointerFileName = `workflow-state-${Date.now()}-${createHash("sha256")
+    .update(`${path}:${state.updatedAt}`)
+    .digest("hex")
+    .slice(0, 12)}.json`
+  const pointerPath = join(pointerDirectory, pointerFileName)
+
+  await writeTextFileAtomic(pointerPath, `${JSON.stringify({
+    createdAt: nowIso(),
+    stateFilePath: path,
+    maxArtifactBytes,
+    originalBytes: Buffer.byteLength(serialized, "utf8"),
+    agentRunsByStage: state.agentRunsByStage,
+  }, null, 2)}\n`)
+
+  const truncatedRunsByStage = truncateAgentRunsByStage(state.agentRunsByStage)
+  const pointerRelativePath = relative(workingDirectory, pointerPath)
+  const truncatedState: WorkflowState = {
+    ...state,
+    agentRunsByStage: truncatedRunsByStage,
+    artifacts: {
+      ...state.artifacts,
+      agentRunsByStage: truncatedRunsByStage,
+      agentRuns: [],
+      agentRunsOversizePointer: pointerRelativePath,
+      agentRunsTruncated: true,
+    },
+  }
+
+  await writeTextFileAtomic(path, `${JSON.stringify(truncatedState, null, 2)}\n`)
 }
 
 async function readWorkflowState(path: string): Promise<WorkflowState | null> {
@@ -2311,12 +2617,31 @@ export async function runWorkflow(
   options: WorkflowRunOptions = {},
 ): Promise<WorkflowRunResult> {
   const sessionId = options.sessionId ?? "default"
+  const stateFilePath = resolveStateFilePath(input, options)
+  const loadedConfig = await loadMergedConfig({
+    projectDir: input.workingDirectory,
+  })
+  const notepadEnabled = loadedConfig.config.workflow.notepad_enabled === true
+  if (options.workflowProfile === "auto" && loadedConfig.config.workflow.policy_enabled !== true) {
+    return {
+      status: "failed",
+      error: "policy_disabled: workflow.auto profile requires config.workflow.policy_enabled=true",
+      completedStages: [],
+      artifacts: {},
+      stateFilePath,
+    }
+  }
+  const policyState = await resolveWorkflowPolicyState({
+    config: loadedConfig.config,
+    task: input.task,
+    workingDirectory: input.workingDirectory,
+    ...(options.workflowProfile ? { workflowProfile: options.workflowProfile } : {}),
+  })
   const sessionLock = await acquireSessionLock({
     workspaceRoot: input.workingDirectory,
     sessionId,
     owner: "workflow:orchestrator",
   })
-  const stateFilePath = resolveStateFilePath(input, options)
   if (!sessionLock.acquired) {
     return {
       status: "failed",
@@ -2354,6 +2679,20 @@ export async function runWorkflow(
     }
   }
 
+  if (!shouldResume && policyState.explain && policyState.plan) {
+    state = {
+      ...state,
+      workflowPolicyExplain: policyState.explain,
+      workflowExecutionPlan: policyState.plan,
+      updatedAt: nowIso(),
+    }
+    await writeWorkflowState(stateFilePath, state, input.workingDirectory)
+    await appendStructuredLog(input.workingDirectory, {
+      ...(policyState.logPayload ?? {}),
+      sessionId,
+    })
+  }
+
   let startIndex = 0
   if (shouldResume) {
     startIndex = resolveStartIndex(state)
@@ -2366,6 +2705,27 @@ export async function runWorkflow(
   }
 
   for (let i = startIndex; i < WORKFLOW_STAGES.length; i += 1) {
+    const preStageBudgetError = evaluateWorkflowBudgetExceeded(state)
+    if (preStageBudgetError) {
+      const budgetFailedStage = state.currentStage
+      state = {
+        ...state,
+        status: "failed",
+        ...(budgetFailedStage ? { failedStage: budgetFailedStage } : {}),
+        error: preStageBudgetError,
+        updatedAt: nowIso(),
+      }
+      await writeWorkflowState(stateFilePath, state, input.workingDirectory)
+      return {
+        status: "failed",
+        ...(budgetFailedStage ? { failedStage: budgetFailedStage } : {}),
+        error: preStageBudgetError,
+        completedStages: state.completedStages,
+        artifacts: state.artifacts,
+        stateFilePath,
+      }
+    }
+
     if (cancelMarkerPath && await pathExists(cancelMarkerPath)) {
       state = {
         ...state,
@@ -2373,7 +2733,7 @@ export async function runWorkflow(
         error: "workflow cancelled",
         updatedAt: nowIso(),
       }
-      await writeWorkflowState(stateFilePath, state)
+      await writeWorkflowState(stateFilePath, state, input.workingDirectory)
       return {
         status: "failed",
         ...(state.currentStage ? { failedStage: state.currentStage } : {}),
@@ -2408,7 +2768,7 @@ export async function runWorkflow(
       currentNode: stageNode,
       updatedAt: nowIso(),
     }
-    await writeWorkflowState(stateFilePath, state)
+    await writeWorkflowState(stateFilePath, state, input.workingDirectory)
     await options.onStageTransition?.({
       stage,
       phase: "starting",
@@ -2433,6 +2793,14 @@ export async function runWorkflow(
     const stageArtifacts = mergedStageArtifacts
     if (executionResult.status === "completed" || executionResult.artifacts !== undefined) {
       assertStageArtifactContract(stage, stageArtifacts)
+    }
+    if (notepadEnabled) {
+      await appendStageNotepadSummary({
+        workingDirectory: input.workingDirectory,
+        sessionId,
+        stage,
+        stageArtifacts,
+      })
     }
 
     const flattenedAgentRuns = flattenAgentRunsByStage(mergedByStage)
@@ -2464,6 +2832,31 @@ export async function runWorkflow(
       updatedAt: nowIso(),
     }
 
+    const postStageBudgetError = evaluateWorkflowBudgetExceeded(state)
+    if (postStageBudgetError) {
+      state = {
+        ...state,
+        status: "failed",
+        failedStage: stage,
+        error: postStageBudgetError,
+        currentNode: executionResult.currentNode ?? state.currentNode ?? stageNode,
+        updatedAt: nowIso(),
+      }
+      await writeWorkflowState(stateFilePath, state, input.workingDirectory)
+      await options.onStageTransition?.({
+        stage,
+        phase: "failed",
+      })
+      return {
+        status: "failed",
+        failedStage: stage,
+        error: postStageBudgetError,
+        completedStages: state.completedStages,
+        artifacts: state.artifacts,
+        stateFilePath,
+      }
+    }
+
     if (executionResult.status === "failed") {
       await options.onStageTransition?.({
         stage,
@@ -2477,7 +2870,7 @@ export async function runWorkflow(
         currentNode: executionResult.currentNode ?? state.currentNode ?? stageNode,
         updatedAt: nowIso(),
       }
-      await writeWorkflowState(stateFilePath, state)
+      await writeWorkflowState(stateFilePath, state, input.workingDirectory)
       return {
         status: "failed",
         failedStage: stage,
@@ -2494,7 +2887,7 @@ export async function runWorkflow(
       currentNode: null,
       updatedAt: nowIso(),
     }
-    await writeWorkflowState(stateFilePath, state)
+    await writeWorkflowState(stateFilePath, state, input.workingDirectory)
     await options.onStageTransition?.({
       stage,
       phase: "completed",
@@ -2514,7 +2907,7 @@ export async function runWorkflow(
     currentNode: null,
     updatedAt: nowIso(),
   }
-  await writeWorkflowState(stateFilePath, state)
+  await writeWorkflowState(stateFilePath, state, input.workingDirectory)
 
   return {
     status: "completed",

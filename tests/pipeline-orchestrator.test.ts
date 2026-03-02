@@ -180,6 +180,241 @@ describe("pipeline orchestrator", () => {
     expect(stateRaw).toContain("\"failedStage\": \"development\"")
   })
 
+  it("policy_disabled: fails when auto profile is requested but policy is disabled", async () => {
+    const workingDirectory = await createTempDir()
+    await mkdir(join(workingDirectory, ".opencode"), { recursive: true })
+    await writeFile(
+      join(workingDirectory, ".opencode", "opencode-team.json"),
+      `${JSON.stringify({ workflow: { policy_enabled: false } }, null, 2)}\n`,
+      "utf8",
+    )
+
+    const result = await runWorkflow(
+      {
+        task: "policy disabled run",
+        workingDirectory,
+      },
+      {
+        workflowProfile: "auto",
+        executors: {
+          requirements: async () => ({ status: "completed", artifacts: { requirementsTask: "policy disabled run" } }),
+          planning: async () => ({ status: "completed", artifacts: { adrDecision: "decision", adrDrivers: ["driver"], handoff: HANDOFF } }),
+          issue: async () => ({ status: "completed", artifacts: { issueNumber: 501 } }),
+          development: async () => ({
+            status: "completed",
+            artifacts: {
+              implementationPlan: "impl",
+              testingPlan: [],
+              developmentExecution: {
+                mode: "dry_run",
+                scriptName: null,
+                changedFiles: [],
+                changeCount: 0,
+              },
+              handoff: HANDOFF,
+            },
+          }),
+          testing: async () => ({ status: "completed", artifacts: { verificationPassed: true, handoff: HANDOFF } }),
+          merge: async () => ({ status: "completed", artifacts: { mergeReady: false, handoff: HANDOFF } }),
+        },
+      },
+    )
+
+    expect(result.status).toBe("failed")
+    expect(String(result.error)).toContain("policy_disabled")
+  })
+
+  it("policy: persists explain + planHash and appends structured policy decision log", async () => {
+    const workingDirectory = await createTempDir()
+    await mkdir(join(workingDirectory, ".opencode"), { recursive: true })
+    await writeFile(
+      join(workingDirectory, ".opencode", "opencode-team.json"),
+      `${JSON.stringify({ workflow: { policy_enabled: true } }, null, 2)}\n`,
+      "utf8",
+    )
+
+    const result = await runWorkflow(
+      {
+        task: "policy enabled run",
+        workingDirectory,
+      },
+      {
+        workflowProfile: "auto",
+        executors: {
+          requirements: async () => ({ status: "completed", artifacts: { requirementsTask: "policy enabled run" } }),
+          planning: async () => ({ status: "completed", artifacts: { adrDecision: "decision", adrDrivers: ["driver"], handoff: HANDOFF } }),
+          issue: async () => ({ status: "completed", artifacts: { issueNumber: 502 } }),
+          development: async () => ({
+            status: "completed",
+            artifacts: {
+              implementationPlan: "impl",
+              testingPlan: [],
+              developmentExecution: {
+                mode: "dry_run",
+                scriptName: null,
+                changedFiles: [],
+                changeCount: 0,
+              },
+              handoff: HANDOFF,
+            },
+          }),
+          testing: async () => ({ status: "completed", artifacts: { verificationPassed: true, handoff: HANDOFF } }),
+          merge: async () => ({ status: "completed", artifacts: { mergeReady: false, handoff: HANDOFF } }),
+        },
+      },
+    )
+
+    expect(result.status).toBe("completed")
+    const state = JSON.parse(await readFile(result.stateFilePath, "utf8")) as {
+      workflowPolicyExplain?: { signals?: string[]; reasons?: string[] }
+      workflowExecutionPlan?: { planHash?: string }
+    }
+    expect(state.workflowPolicyExplain?.signals?.length).toBeGreaterThan(0)
+    expect(state.workflowPolicyExplain?.reasons?.length).toBeGreaterThan(0)
+    expect(typeof state.workflowExecutionPlan?.planHash).toBe("string")
+
+    const structuredLogPath = join(workingDirectory, ".agent-guide", "runtime", "structured-log.jsonl")
+    const lines = (await readFile(structuredLogPath, "utf8"))
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+    const policyEntries = lines
+      .map((line) => JSON.parse(line) as { event?: string; planHash?: string })
+      .filter((entry) => entry.event === "workflow_policy_decided")
+
+    expect(policyEntries).toHaveLength(1)
+    expect(policyEntries[0]?.planHash).toBe(state.workflowExecutionPlan?.planHash)
+  })
+
+  it("budget: fails fast with budget_exceeded when max_role_runs is exceeded", async () => {
+    const workingDirectory = await createTempDir()
+    await mkdir(join(workingDirectory, ".opencode"), { recursive: true })
+    await writeFile(
+      join(workingDirectory, ".opencode", "opencode-team.json"),
+      `${JSON.stringify({
+        workflow: {
+          policy_enabled: true,
+          budgets: {
+            max_role_runs: 1,
+            max_stage_failures: 1,
+            max_total_latency_ms: 999_999,
+            max_artifact_bytes: 2_000_000,
+          },
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    )
+
+    const result = await runWorkflow(
+      {
+        task: "budget role runs",
+        workingDirectory,
+      },
+      {
+        workflowProfile: "auto",
+      },
+    )
+
+    expect(result.status).toBe("failed")
+    expect(String(result.error)).toContain("budget_exceeded")
+    expect(String(result.error)).toContain("max_role_runs")
+  })
+
+  it("budget: fails fast with budget_exceeded when max_total_latency_ms is exceeded", async () => {
+    const workingDirectory = await createTempDir()
+    const baseExecutor = createScriptedSubagentExecutor()
+    const latencyExecutor: SubagentExecutor = async <TContext, TPayload>(request: unknown) => {
+      const result = await baseExecutor<TContext, TPayload>(request as never)
+      return {
+        ...result,
+        latencyMs: 1,
+      }
+    }
+    await mkdir(join(workingDirectory, ".opencode"), { recursive: true })
+    await writeFile(
+      join(workingDirectory, ".opencode", "opencode-team.json"),
+      `${JSON.stringify({
+        workflow: {
+          policy_enabled: true,
+          budgets: {
+            max_role_runs: 999,
+            max_stage_failures: 1,
+            max_total_latency_ms: 1,
+            max_artifact_bytes: 2_000_000,
+          },
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    )
+
+    const result = await runWorkflow(
+      {
+        task: "budget latency",
+        workingDirectory,
+      },
+      {
+        workflowProfile: "auto",
+        subagentExecutor: latencyExecutor,
+      },
+    )
+
+    expect(result.status).toBe("failed")
+    expect(String(result.error)).toContain("budget_exceeded")
+    expect(String(result.error)).toContain("max_total_latency_ms")
+  })
+
+  it("budget: truncates workflow state agent runs when max_artifact_bytes is exceeded", async () => {
+    const workingDirectory = await createTempDir()
+    await mkdir(join(workingDirectory, ".opencode"), { recursive: true })
+    await writeFile(
+      join(workingDirectory, ".opencode", "opencode-team.json"),
+      `${JSON.stringify({
+        workflow: {
+          policy_enabled: true,
+          budgets: {
+            max_role_runs: 999,
+            max_stage_failures: 1,
+            max_total_latency_ms: 999_999,
+            max_artifact_bytes: 1200,
+          },
+        },
+      }, null, 2)}\n`,
+      "utf8",
+    )
+
+    const result = await runWorkflow(
+      {
+        task: "budget artifact bytes",
+        workingDirectory,
+      },
+      {
+        workflowProfile: "auto",
+      },
+    )
+
+    expect(result.status).toBe("completed")
+
+    const state = JSON.parse(await readFile(result.stateFilePath, "utf8")) as {
+      agentRunsByStage?: Record<string, unknown[]>
+      artifacts?: {
+        agentRunsOversizePointer?: string
+        agentRunsTruncated?: boolean
+      }
+    }
+
+    expect(state.artifacts?.agentRunsTruncated).toBe(true)
+    expect(typeof state.artifacts?.agentRunsOversizePointer).toBe("string")
+
+    const pointerPath = join(workingDirectory, String(state.artifacts?.agentRunsOversizePointer ?? ""))
+    const pointerRaw = await readFile(pointerPath, "utf8")
+    const pointer = JSON.parse(pointerRaw) as {
+      agentRunsByStage?: Record<string, unknown[]>
+    }
+
+    expect(Object.values(state.agentRunsByStage ?? {}).every((runs) => Array.isArray(runs) && runs.length === 0)).toBe(true)
+    expect(Object.values(pointer.agentRunsByStage ?? {}).some((runs) => Array.isArray(runs) && runs.length > 0)).toBe(true)
+  })
+
   it("resumes from last failed stage", async () => {
     const workingDirectory = await createTempDir()
 
