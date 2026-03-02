@@ -132,6 +132,11 @@
 - safe staging: generated/non-code untracked 파일 자동 제외
 - atomic write: 상태 파일 손상 방지
 - structured logging: stage/mode/error/retry 추적
+- workflow event logging: stage transition 이벤트를 session 단위 JSONL로 기록
+- subagent execution guard: role 실행은 timeout/retry 계약(`timeoutMs`, `maxRetries`)을 포함해 executor 경유로 수행
+- timeout surfaced status: executor timeout은 `timeout` 상태/오류 코드로 상위 stage 실패 원인에 보존
+- delegation prompt contract: role 위임 입력은 6-섹션 계약 포맷으로 구성되어 실행 품질 기준을 고정
+- delegation observability: role 실행 artifact는 delegation prompt hash/line count를 기록해 재현성과 감사 가능성을 강화
 
 ## 13) Context and Memory Lifecycle
 - pre-run: context + memory preload

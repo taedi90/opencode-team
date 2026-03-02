@@ -48,6 +48,14 @@ OpenAI-only 기반 멀티 에이전트 실무 워크플로우 플러그인입니
 - in-run: memory reference 로그 append
 - post-run: context handoff 갱신 + memory 승격/정리
 
+subagent 실행 안전장치:
+- 모든 role 실행은 timeout/retry 힌트를 포함해 executor로 전달됩니다.
+- 기본 timeout: `120000ms`
+- 기본 retry: `0` (`maxAttempts=1`)
+- timeout 초과 시 상태는 `timeout`, 오류 코드는 `timeout`으로 기록됩니다.
+- role 실행 입력은 6-섹션 delegation prompt contract(`TASK/EXPECTED OUTCOME/REQUIRED TOOLS/MUST DO/MUST NOT DO/CONTEXT`)로 정규화됩니다.
+- 각 role 실행 artifact에는 delegation prompt hash/line count가 기록되어 실행 관측성과 추적성이 보장됩니다.
+
 orchestrator 세션 상태:
 - `.agent-guide/runtime/state/sessions/<sessionId>/orchestrator-state.json`
 - `.agent-guide/runtime/state/sessions/<sessionId>/workflow-state.json`
@@ -55,12 +63,14 @@ orchestrator 세션 상태:
 
 관련 로그:
 - `.agent-guide/runtime/context-memory-log.jsonl`
+- `.agent-guide/runtime/workflow-events.jsonl`
 - `.agent-guide/runtime/state/sessions/<sessionId>/*-state.json`
 
 ## MCP / Tool Policy
 - install 단계에서 MCP manifest를 bootstrap 합니다.
 - runtime에서 agent tool policy를 검사하며 위반 시 차단합니다.
 - doctor에서 MCP manifest 및 tool policy 상태를 점검합니다.
+- tool policy audit 로그는 `session_id`, `stage` 메타데이터를 포함합니다.
 - `researcher` 역할은 기본적으로 `web_search`/`context7` 계열 도구를 허용하고, `bash`/`write`/`edit`/`github`는 차단합니다.
 - `documenter` 역할은 `README.md`, `ARCHITECTURE.md`, `docs/**/*.md` 동기화를 담당하며 기본적으로 `write`/`edit`를 허용하고 `bash`/`github`를 차단합니다.
 
