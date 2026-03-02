@@ -33,10 +33,8 @@ export const AGENT_DEFINITIONS: Record<CoreAgentRole, AgentDefinition> = {
   documenter: { role: "documenter", tier: "THOROUGH", kind: "core" },
 }
 
-function resolveModelForTier(tier: AgentTier, config: OpenCodeTeamConfig): string {
-  if (tier === "LOW") return config.models.low
-  if (tier === "STANDARD") return config.models.standard
-  return config.models.thorough
+function resolveModelForRole(role: CoreAgentRole, config: OpenCodeTeamConfig): string {
+  return config.models[role]
 }
 
 function resolveReasoningForTier(tier: AgentTier): ReasoningEffort {
@@ -54,7 +52,7 @@ export function resolveAgentRoute(
     role,
     tier: definition.tier,
     kind: definition.kind,
-    model: resolveModelForTier(definition.tier, config),
+    model: resolveModelForRole(role, config),
     reasoningEffort: resolveReasoningForTier(definition.tier),
   }
 }

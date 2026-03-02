@@ -65,19 +65,19 @@ describe("config loader", () => {
 
     await writeUserConfigFile(userHome, {
       merge_policy: { require_user_approval: false },
-      models: { low: "openai/gpt-5.3-codex-spark" },
+      models: { developer: "openai/gpt-5.3-codex-spark" },
     })
 
     await writeProjectConfigFile(projectDir, {
       merge_policy: { require_user_approval: true },
-      models: { thorough: "openai/gpt-5.3-codex" },
+      models: { reviewer: "openai/gpt-5.3-codex" },
     })
 
     const result = await loadMergedConfig({ projectDir, userHome })
 
     expect(result.config.merge_policy.require_user_approval).toBe(true)
-    expect(result.config.models.low).toBe("openai/gpt-5.3-codex-spark")
-    expect(result.config.models.thorough).toBe("openai/gpt-5.3-codex")
+    expect(result.config.models.developer).toBe("openai/gpt-5.3-codex-spark")
+    expect(result.config.models.reviewer).toBe("openai/gpt-5.3-codex")
   })
 
   it("supports boolean merge policy field require_user_approval", async () => {
@@ -125,15 +125,15 @@ describe("config loader", () => {
 
     await writeUserConfigFile(userHome, {
       models: {
-        standard: "anthropic/claude-sonnet-4",
+        developer: "anthropic/claude-sonnet-4",
       },
     })
 
     const result = await loadMergedConfig({ projectDir, userHome })
 
-    expect(result.config.models.standard).toBe(DEFAULT_CONFIG.models.standard)
+    expect(result.config.models.developer).toBe(DEFAULT_CONFIG.models.developer)
     expect(result.warnings).toContain(
-      "models.standard must start with openai/",
+      "models.developer must start with openai/",
     )
   })
 
@@ -160,7 +160,7 @@ describe("config loader", () => {
 
     await writeLegacyConfigFile(projectDir, {
       merge_policy: { require_user_approval: false },
-      models: { standard: "openai/gpt-5.3-codex" },
+      models: { developer: "openai/gpt-5.3-codex" },
     })
 
     const result = await loadMergedConfig({ projectDir, userHome })

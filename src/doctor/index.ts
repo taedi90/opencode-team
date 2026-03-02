@@ -156,13 +156,13 @@ function checkStatusPriority(checks: DoctorCheck[]): DoctorCommandResult["status
 function checkModelPolicy(config: OpenCodeTeamConfig): DoctorCheck {
   const invalid = Object.entries(config.models)
     .filter(([, model]) => !model.startsWith("openai/"))
-    .map(([tier]) => tier)
+    .map(([role]) => role)
 
   if (invalid.length > 0) {
     return {
       name: "models_openai_only",
       status: "fail",
-      detail: `non-openai model tiers detected: ${invalid.join(", ")}`,
+      detail: `non-openai agent models detected: ${invalid.join(", ")}`,
     }
   }
 

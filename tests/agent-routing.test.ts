@@ -26,7 +26,7 @@ describe("agent routing", () => {
     const route = resolveAgentRoute("developer")
 
     expect(route.tier).toBe("STANDARD")
-    expect(route.model).toBe(DEFAULT_CONFIG.models.standard)
+    expect(route.model).toBe(DEFAULT_CONFIG.models.developer)
     expect(route.reasoningEffort).toBe("medium")
   })
 
@@ -34,7 +34,7 @@ describe("agent routing", () => {
     const route = resolveAgentRoute("architect")
 
     expect(route.tier).toBe("THOROUGH")
-    expect(route.model).toBe(DEFAULT_CONFIG.models.thorough)
+    expect(route.model).toBe(DEFAULT_CONFIG.models.architect)
     expect(route.reasoningEffort).toBe("high")
   })
 
@@ -42,7 +42,7 @@ describe("agent routing", () => {
     const route = resolveAgentRoute("researcher")
 
     expect(route.tier).toBe("THOROUGH")
-    expect(route.model).toBe(DEFAULT_CONFIG.models.thorough)
+    expect(route.model).toBe(DEFAULT_CONFIG.models.researcher)
     expect(route.reasoningEffort).toBe("high")
   })
 
@@ -51,7 +51,7 @@ describe("agent routing", () => {
       ...DEFAULT_CONFIG,
       models: {
         ...DEFAULT_CONFIG.models,
-        standard: "openai/gpt-5.3-codex-mini",
+        tester: "openai/gpt-5.3-codex-mini",
       },
     })
 

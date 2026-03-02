@@ -3,8 +3,6 @@ import { dirname, join } from "node:path"
 
 import { CORE_AGENT_ROLES, type CoreAgentRole } from "../contracts/roles.js"
 
-export type ModelTier = "low" | "standard" | "thorough"
-
 export const AGENT_ROLES = CORE_AGENT_ROLES
 
 export type AgentRole = CoreAgentRole
@@ -14,9 +12,15 @@ export interface MergePolicyConfig {
 }
 
 export interface ModelsConfig {
-  low: string
-  standard: string
-  thorough: string
+  orchestrator: string
+  plan: string
+  architect: string
+  critic: string
+  researcher: string
+  developer: string
+  tester: string
+  reviewer: string
+  documenter: string
 }
 
 export interface McpServerConfig {
@@ -101,9 +105,15 @@ export const DEFAULT_CONFIG: OpenCodeTeamConfig = {
     require_user_approval: true,
   },
   models: {
-    low: "openai/gpt-5.3-codex-spark",
-    standard: "openai/gpt-5.3-codex",
-    thorough: "openai/gpt-5.3-codex",
+    orchestrator: "openai/gpt-5.3-codex",
+    plan: "openai/gpt-5.3-codex",
+    architect: "openai/gpt-5.3-codex",
+    critic: "openai/gpt-5.3-codex",
+    researcher: "openai/gpt-5.3-codex",
+    developer: "openai/gpt-5.3-codex",
+    tester: "openai/gpt-5.3-codex",
+    reviewer: "openai/gpt-5.3-codex",
+    documenter: "openai/gpt-5.3-codex",
   },
   mcp: {
     servers: {
@@ -212,11 +222,10 @@ function cloneDefaults(): OpenCodeTeamConfig {
     merge_policy: {
       require_user_approval: DEFAULT_CONFIG.merge_policy.require_user_approval,
     },
-    models: {
-      low: DEFAULT_CONFIG.models.low,
-      standard: DEFAULT_CONFIG.models.standard,
-      thorough: DEFAULT_CONFIG.models.thorough,
-    },
+    models: AGENT_ROLES.reduce((accumulator, role) => {
+      accumulator[role] = DEFAULT_CONFIG.models[role]
+      return accumulator
+    }, {} as ModelsConfig),
     mcp: {
       servers: mcpServers,
     },
@@ -310,21 +319,21 @@ function parseModels(value: unknown, warnings: string[]): Partial<ModelsConfig> 
 
   const next: Partial<ModelsConfig> = {}
 
-  for (const tier of ["low", "standard", "thorough"] as const) {
-    const rawModel = value[tier]
+  for (const role of AGENT_ROLES) {
+    const rawModel = value[role]
     if (rawModel === undefined) continue
 
     if (typeof rawModel !== "string" || rawModel.trim() === "") {
-      warnings.push(`models.${tier} must be a non-empty string`)
+      warnings.push(`models.${role} must be a non-empty string`)
       continue
     }
 
     if (!rawModel.startsWith("openai/")) {
-      warnings.push(`models.${tier} must start with openai/`)
+      warnings.push(`models.${role} must start with openai/`)
       continue
     }
 
-    next[tier] = rawModel.trim()
+    next[role] = rawModel.trim()
   }
 
   return next
