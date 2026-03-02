@@ -7,7 +7,7 @@ export interface OpenCodeDevelopArtifact {
 
 export const opencodeDevelopArtifact: OpenCodeDevelopArtifact = {
   issueNumber: null,
-  task: "local test",
+  task: "local test 1772450351",
   adrDecision: "참조 구현을 최소 이식하고 불필요 기능을 제거한다.",
-  signature: "63815c5f20ff97bc",
+  signature: "20ec249e3727e58a",
 }
