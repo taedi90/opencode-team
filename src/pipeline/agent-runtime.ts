@@ -66,6 +66,7 @@ export interface WorkflowAgentRunInput<TContext> {
   timeoutMs?: number
   maxRetries?: number
   delegationPrompt?: DelegationPromptInput
+  runtimeOverlay?: string
   config?: OpenCodeTeamConfig | undefined
   onToolPolicyEvaluated?: (input: {
     stage: WorkflowStage
@@ -220,6 +221,7 @@ export async function runWorkflowAgent<TContext, TPayload>(
     workspaceRoot: input.workspaceRoot,
     role: input.role,
     sessionId: input.sessionId,
+    ...(input.runtimeOverlay ? { runtimeOverlay: input.runtimeOverlay } : {}),
   })
 
   const delegationPrompt = input.delegationPrompt

@@ -111,4 +111,18 @@ describe("agent system instructions", () => {
     expect(result.content).toContain("## Role Prompt (documenter)")
     expect(result.content).toContain("doc coverage matrix")
   })
+
+  it("includes runtime overlay when provided", async () => {
+    const workspaceRoot = await createWorkspaceWithAgents("# AGENTS\n")
+
+    const result = await buildAgentSystemInstructions({
+      workspaceRoot,
+      role: "developer",
+      sessionId: "runtime-overlay",
+      runtimeOverlay: "learnings:\n- keep overlays short",
+    })
+
+    expect(result.content).toContain("## Runtime Overlay")
+    expect(result.content).toContain("learnings:\n- keep overlays short")
+  })
 })
